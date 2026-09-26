@@ -1,0 +1,8 @@
+# image-builder blueprint used by scripts/build.sh.
+# Copy to config.toml (git-ignored) and put your own SSH public key in it.
+# https://osbuild.org/docs/user-guide/blueprint-reference/
+
+[[customizations.user]]
+name = "admin"
+key = "ssh-ed25519 AAAA... you@example.com"
+groups = ["wheel"]

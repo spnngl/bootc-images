@@ -1,0 +1,5 @@
+# The Fedora base image sets no default root filesystem type, so without this
+# `bootc install to-disk` needs `--filesystem`. Higher-numbered files win.
+# https://bootc.dev/bootc/bootc-install.html
+[install.filesystem.root]
+type = "xfs"
