@@ -16,12 +16,15 @@ name="${1:-fedora}"
 tag="localhost/${name}-bootc:latest"
 cd "$(dirname "$0")/.."
 
-die() { echo "error: $*" >&2; exit 1; }
+die() {
+    echo "error: $*" >&2
+    exit 1
+}
 
 [[ -f "images/${name}/Containerfile" ]] || die "images/${name}/Containerfile not found"
 [[ -f config.toml ]] || die "config.toml not found, start from: cp config.example.toml config.toml"
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
-  die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
+    die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
 
 podman build -f "images/${name}/Containerfile" -t "${tag}" "images/${name}"
 
@@ -30,12 +33,12 @@ podman build -f "images/${name}/Containerfile" -t "${tag}" "images/${name}"
 # /var/lib/containers/storage: lets image-builder see the image built above.
 mkdir -p output
 podman run --rm --privileged --pull=newer \
-  --security-opt label=type:unconfined_t \
-  -v "${PWD}/config.toml:/config.toml:ro" \
-  -v "${PWD}/output:/output" \
-  -v /var/lib/containers/storage:/var/lib/containers/storage \
-  ghcr.io/osbuild/image-builder-cli:latest \
-  build --bootc-ref "${tag}" --blueprint /config.toml \
-  --output-dir "${name}" --output-name "${name}" qcow2
+    --security-opt label=type:unconfined_t \
+    -v "${PWD}/config.toml:/config.toml:ro" \
+    -v "${PWD}/output:/output" \
+    -v /var/lib/containers/storage:/var/lib/containers/storage \
+    ghcr.io/osbuild/image-builder-cli:v84.0.0 \
+    build --bootc-ref "${tag}" --blueprint /config.toml \
+    --output-dir "${name}" --output-name "${name}" qcow2
 
 echo "disk image: output/${name}/${name}.qcow2"
