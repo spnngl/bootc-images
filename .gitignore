@@ -1,0 +1,36 @@
+# bootc-image-builder output (-v ./output:/output):
+# qcow2/disk.qcow2, bootiso/install.iso, image/disk.raw, manifest-*.json, ...
+/output/
+
+# bootc-image-builder caches (-v ./store:/store, -v ./rpmmd:/rpmmd)
+/store/
+/rpmmd/
+
+# bootc-image-builder config: holds users, password hashes and SSH keys.
+# Commit a sanitized copy under another name instead (e.g. config.example.toml).
+/config.toml
+/config.json
+
+# Disk and installer images, wherever they end up
+*.qcow2
+*.iso
+*.raw
+*.img
+*.vmdk
+*.vhd
+*.vhdx
+*.ova
+
+# Container image archives (podman save, skopeo copy oci-archive:)
+*.tar
+*.ociarchive
+
+# Secrets: registry pull secrets (/etc/ostree/auth.json) and private keys
+auth.json
+*.key
+*.pem
+id_*
+!id_*.pub
+
+# macOS
+.DS_Store
