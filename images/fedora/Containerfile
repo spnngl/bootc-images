@@ -1,54 +1,49 @@
 # Minimal derived Fedora bootc image.
 #
-# Build from the repository root. The build context is images/fedora/: it is
-# copied as the image root filesystem, minus the entries in .containerignore.
-#
+# Build command:
 #   podman build -f images/fedora/Containerfile -t localhost/fedora-bootc:latest images/fedora
 #
 # scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
 # boots it in QEMU.
 #
-# Try it on a running bootc system:
-#
-#   sudo bootc switch --transport containers-storage localhost/fedora-bootc:latest
-#
-# Or install it to a disk. This must run *from* the image, as root.
-# WARNING: this erases /dev/sdX.
-#
-#   sudo podman run --rm --privileged --pid=host --ipc=host \
-#     -v /var/lib/containers:/var/lib/containers -v /dev:/dev \
-#     --security-opt label=type:unconfined_t \
-#     localhost/fedora-bootc:latest \
-#     bootc install to-disk --root-ssh-authorized-keys /path/to/authorized_keys /dev/sdX
-#
-# The image ships no users, passwords or SSH keys, so you must provide login
-# credentials at install time (as above, or through a bootc-image-builder
-# config.toml).
-#
+# NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
-# Pin a Fedora release. `latest` also works but moves to the next major
-# release without warning. Available tags:
-# https://quay.io/repository/fedora/fedora-bootc?tab=tags
+# Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
 FROM quay.io/fedora/fedora-bootc:44
 
-RUN <<EORUN
-set -xeuo pipefail
+USER root
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
-# Install packages exactly as in an application container. Packages become
-# part of the read-only /usr, so they are updated with the image.
-dnf -y install tmux htop
+RUN <<EORUN
+# Install packages
+dnf -y install tmux htop btrfs-progs firewalld
 dnf clean all
-# /var is machine-local state. It is only copied from the image at first
-# install, so do not leave anything there (bootc lint warns about logs).
+
+# TZ
+ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
+
+# chrony.conf has no include directory: replace its default pool with a
+# sources directory, filled by etc/chrony/sources.d/. Fail if the pool line
+# was not found.
+sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
+grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
+
+# sshd listens on 42022 (etc/ssh/sshd_config.d/10-myssh.conf). Allow it in
+# SELinux, or sshd cannot bind, and in the firewall.
+semanage port -a -t ssh_port_t -p tcp 42022
+firewall-offline-cmd --add-port=42022/tcp
+
+# Systemd services
+systemctl enable sshd.service firewalld.service
+systemctl mask rpcbind.service rpcbind.socket
+
+# Cleanup
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
-# Static configuration, laid out as it appears in the image. It goes in /usr so
-# it stays read-only and is updated with the image. Copied after the package
-# install so editing it does not invalidate the dnf layer cache.
+# Copy static configuration files
 COPY . /
 
-# Keep this as the last instruction. It runs static checks on the final image
-# and fails the build on errors, and on warnings too with --fatal-warnings.
+# Keep this as the last instruction
 RUN bootc container lint --fatal-warnings

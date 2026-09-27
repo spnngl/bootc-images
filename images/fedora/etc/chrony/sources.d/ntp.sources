@@ -1,0 +1,5 @@
+# NTP servers. chrony.conf has no include directory, so the Containerfile
+# replaces its default `pool` line with `sourcedir /etc/chrony/sources.d`.
+# Google smears leap seconds: do not mix with non-smearing servers.
+# https://developers.google.com/time/smear
+server time.google.com iburst

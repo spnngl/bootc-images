@@ -35,13 +35,17 @@ There are two stages:
 
 A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
 
-- Installs `tmux` and `htop`, then empties `/var/log`, `/var/cache`,
-  `/var/lib/dnf`, `/tmp` and `/run/dnf*`.
+- Installs `tmux`, `htop` and what the configuration below needs, then
+  empties `/var/log`, `/var/cache`, `/var/lib/dnf`, `/tmp` and `/run/dnf*`.
 - `usr/lib/bootc/kargs.d/10-console.toml`: serial console kernel
   arguments, x86_64 only.
-- `usr/lib/bootc/install/50-rootfs.toml`: default root filesystem `xfs`.
+- `usr/lib/bootc/install/50-rootfs.toml`: default root filesystem `btrfs`.
   The Fedora base image sets none, so without this file both
   `bootc install to-disk` and image-builder would need a filesystem flag.
+- System configuration that bootc disk images don't accept from the
+  blueprint: hostname, timezone, locale, NTP servers (chrony), DNS
+  (systemd-resolved drop-in), sshd on port 42022 (SELinux port label and firewalld port),
+  enabled and masked services. `config.toml` only holds the user.
 - Ends with `bootc container lint --fatal-warnings`.
 
 ## Design decisions
@@ -100,7 +104,8 @@ Images are tagged `localhost/<name>-bootc:latest`.
 
 QEMU with HVF acceleration, the `virt` machine and the Homebrew aarch64 UEFI
 firmware. The serial console is in the terminal (`Ctrl-a x` quits) and SSH
-is forwarded from `localhost:${SSH_PORT:-2222}`. `-snapshot` throws away
+is forwarded from `localhost:${SSH_PORT:-2222}` to the guest sshd port
+42022, set by `images/fedora`. `-snapshot` throws away
 disk changes on exit.
 
 It only supports macOS on Apple Silicon, and says so when run anywhere else.

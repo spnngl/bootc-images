@@ -5,7 +5,7 @@
 # Usage: [SSH_PORT=2222] scripts/run.sh [name]    (default: fedora)
 #
 # Console: this terminal, quit with Ctrl-a x.
-# SSH:     ssh -p 2222 <user from config.toml>@localhost
+# SSH:     ssh -p 2222 <user from config.toml>@localhost (guest sshd port 42022)
 # Disk changes are discarded on exit (-snapshot).
 set -euo pipefail
 
@@ -29,5 +29,5 @@ exec qemu-system-aarch64 \
     -machine virt,accel=hvf -cpu host -smp 2 -m 4096 \
     -bios "${firmware}" \
     -drive "file=${disk},if=virtio,format=qcow2" -snapshot \
-    -netdev "user,id=n0,hostfwd=tcp::${ssh_port}-:22" -device virtio-net-pci,netdev=n0 \
+    -netdev "user,id=n0,hostfwd=tcp::${ssh_port}-:42022" -device virtio-net-pci,netdev=n0 \
     -nographic
