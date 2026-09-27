@@ -26,7 +26,7 @@ die() {
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
     die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
 
-podman build -f "images/${name}/Containerfile" -t "${tag}" "images/${name}"
+podman build --format=docker -f "images/${name}/Containerfile" -t "${tag}" "images/${name}"
 
 # --privileged and label=type:unconfined_t: image-builder relabels files and
 # sets up loop devices, which a confined container is not allowed to do.

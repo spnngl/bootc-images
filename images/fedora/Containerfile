@@ -16,8 +16,15 @@ USER root
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 RUN <<EORUN
+# Install base stuff + repos
+dnf -y install ca-certificates dnf-plugins-core glibc-langpack-en glibc-langpack-fr \
+    iproute iputils procps-ng util-linux coreutils e2fsprogs mdadm lvm2 cryptsetup
+# See https://docs.docker.com/engine/install/fedora/
+dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+
 # Install packages
-dnf -y install tmux htop btrfs-progs firewalld
+dnf -y install htop btrfs-progs firewalld netcat vim git nftables podman systemd-networkd \
+    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 dnf clean all
 
 # TZ
@@ -29,14 +36,18 @@ ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
 sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
 grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 
-# sshd listens on 42022 (etc/ssh/sshd_config.d/10-myssh.conf). Allow it in
-# SELinux, or sshd cannot bind, and in the firewall.
-semanage port -a -t ssh_port_t -p tcp 42022
-firewall-offline-cmd --add-port=42022/tcp
+# Used ports
+# - 80+443: HTTP(S)
+# - 42022: sshd (etc/ssh/sshd_config.d/10-myssh.conf)
+#
+# TODO selinux one day
+firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
 
 # Systemd services
-systemctl enable sshd.service firewalld.service
-systemctl mask rpcbind.service rpcbind.socket
+systemctl disable --now NetworkManager
+systemctl mask rpcbind.service rpcbind.socket NetworkManager
+systemctl enable --now sshd.service firewalld.service systemd-networkd.service \
+    docker.service containerd.service mdmonitor.service
 
 # Cleanup
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
@@ -46,4 +57,4 @@ EORUN
 COPY . /
 
 # Keep this as the last instruction
-RUN bootc container lint --fatal-warnings
+RUN bootc container lint

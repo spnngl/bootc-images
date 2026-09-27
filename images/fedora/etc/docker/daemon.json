@@ -1,0 +1,20 @@
+{
+    "ipv6": false,
+    "experimental": true,
+    "log-driver": "journald",
+    "log-opts": {
+        "tag": "{{.Name}}/{{.ID}}"
+    },
+    "firewall-backend": "nftables",
+    "userland-proxy": false,
+    "no-new-privileges": true,
+    "default-ulimits": {
+        "nofile": {
+            "Name": "nofile",
+            "Hard": 65535,
+            "Soft": 65535
+        }
+    },
+    "live-restore": true,
+    "debug": false
+}
