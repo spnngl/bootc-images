@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ipset type="hash:net">
+  <short>Non-global IPv4</short>
+  <description>IANA special-purpose IPv4 ranges: private, link-local, loopback, documentation, multicast, reserved. Used by the geoblock policy. See PLAN.geoblock.md.</description>
+  <option name="family" value="inet"/>
+  <entry>0.0.0.0/8</entry>
+  <entry>10.0.0.0/8</entry>
+  <entry>100.64.0.0/10</entry>
+  <entry>127.0.0.0/8</entry>
+  <entry>169.254.0.0/16</entry>
+  <entry>172.16.0.0/12</entry>
+  <entry>192.0.0.0/24</entry>
+  <entry>192.0.2.0/24</entry>
+  <entry>192.168.0.0/16</entry>
+  <entry>198.18.0.0/15</entry>
+  <entry>198.51.100.0/24</entry>
+  <entry>203.0.113.0/24</entry>
+  <entry>224.0.0.0/4</entry>
+  <entry>240.0.0.0/4</entry>
+</ipset>

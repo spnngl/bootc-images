@@ -12,15 +12,23 @@ Check the source rather than blog posts or memory:
 - Fedora bootc examples: `gitlab.com/fedora/bootc/examples`
 - image-builder / bootc-image-builder: `github.com/osbuild/image-builder`
 - buildah (Containerfile behaviour under podman): `github.com/containers/buildah`
-- Base image tags: <https://quay.io/repository/fedora/fedora-bootc?tab=tags>
+- firewalld (zone/policy/ipset behaviour): `github.com/firewalld/firewalld`
+  (`doc/xml` for docs, `src/firewall/core` for behaviour)
+- Base image tags:
+  <https://quay.io/repository/fedora/fedora-bootc?tab=tags>,
+  <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>
 
 ## Rules for images
 
-- One folder per image: `images/<name>/`, which is also the build context.
-  It needs a `Containerfile` and a `.containerignore` (copy the fedora one).
-- Put files in the folder at the path they get in the image (for example
-  `images/<name>/usr/lib/...`). They are copied with `COPY . /`. Don't
-  write files inline from `RUN`.
+- One folder per image: `images/<name>/`, with its own `Containerfile`.
+  The build context is the shared `images/` folder (see
+  `scripts/build.sh`), not the image's own folder: a `Containerfile` can
+  `COPY`/`ADD` another image's files, e.g. `COPY ./fedora/sysroot/ /`.
+  One `.containerignore` at `images/` covers every image; don't add a
+  per-folder copy.
+- Put files in `images/<name>/sysroot/`, at the path they get in the
+  image (for example `images/<name>/sysroot/usr/lib/...`), copied with
+  `COPY --link ./<name>/sysroot/ /`. Don't write files inline from `RUN`.
 - Prefer `/usr` for content and config. Use `/etc` only for config that
   must be machine-local. Never leave files in `/var`: clean up package
   manager logs, caches and state in the same `RUN`.

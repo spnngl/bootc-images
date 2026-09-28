@@ -39,12 +39,15 @@ ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
 sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
 grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 
+# Firewall
+#
 # Used ports
 # - 80+443: HTTP(S)
 # - 42022: sshd (etc/ssh/sshd_config.d/10-myssh.conf)
 #
 # TODO selinux one day
 firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
+firewall-offline-cmd --zone=public --remove-service-from-zone=cockpit --remove-service-from-zone=ssh
 
 # Systemd services
 systemctl disable NetworkManager

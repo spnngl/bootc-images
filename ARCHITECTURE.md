@@ -17,11 +17,11 @@ There are two stages:
 
 ```
 .
-├── images/
-│   └── <name>/                 # one folder per image, also its build context
+├── images/                     # shared build context for every image
+│   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
+│   └── <name>/                 # one folder per image
 │       ├── Containerfile
-│       ├── .containerignore    # keeps build files out of `COPY . /`
-│       └── usr/...             # files copied as is into the image root
+│       └── sysroot/...         # files copied as is into the image root
 ├── scripts/
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
 │   └── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
@@ -46,17 +46,84 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
   blueprint: hostname, timezone, locale, NTP servers (chrony), DNS
   (systemd-resolved drop-in), sshd on port 42022 (SELinux port label and firewalld port),
   enabled and masked services. `config.toml` only holds the user.
+- Firewall: `public` zone opens 80/443/42022, then drops `ssh` (22) and
+  `cockpit` from it (sshd only listens on 42022, and cockpit isn't
+  installed). See "Firewalld" below for the `firewall-offline-cmd` option
+  this needs.
 - Ends with `bootc container lint --fatal-warnings`.
+
+### `images/almalinux`
+
+A minimal image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
+close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
+plus France-only geo-blocking and threat-feed blocklists on the public
+zone. See `PLAN.geoblock.md` for the full design, the risks and the
+verification still to do; summary:
+
+- Two firewalld policies sit on the `public` zone: `geoblock`
+  (priority -10000) drops everything except French and
+  private/link-local sources (the static, committed ipsets
+  `geoblock-bogons-v{4,6}`); `blocklist` (priority -9000) then drops
+  sources listed by 10 public threat feeds. Both `target=CONTINUE`, so
+  traffic that isn't dropped still goes through the existing `public`
+  zone rules unchanged.
+- The France and blocklist data is baked in at build time, not fetched at
+  runtime. A build-only stage, `geoblock`, downloads the ipdeny lists and
+  the feeds with `ADD`, then `images/almalinux/geoblock_ipsets.py` turns
+  them into firewalld ipsets. Only feed entries that overlap a French
+  network are kept: the `blocklist` policy never sees non-French traffic,
+  so the rest can never match. Nothing from that stage reaches the final
+  image except the generated ipsets and the raw feed files
+  (`/usr/share/geoblock`, kept so a blocked IP can be traced to its feed).
+- Refresh means rebuild: there is no timer and no cron job. `ADD` keys its
+  cache on the fetched content's digest, so a build only reruns the steps
+  that changed.
+- `firewall-offline-cmd --check-config` does not validate ipset entries,
+  so `geoblock_ipsets.py` is the only thing that does. Its tests
+  (`images/almalinux/test_geoblock_ipsets.py`) run before it processes
+  the real data, on every build.
+- A reverse proxy such as Caddy must run with `network_mode: host`:
+  Docker publishes ports (`-p`) by DNATing before firewalld's policies
+  run, so published ports bypass both. Its backends are published on
+  loopback only. Consequence: ACME must use the DNS-01 challenge, since
+  Let's Encrypt validates HTTP-01 from several regions.
+- Kill switch: copy a policy file to `/etc/firewalld/policies/`, add
+  `<disable/>`, `firewall-cmd --reload`. Disable `geoblock` and
+  `blocklist` together, not just one.
+
+### Firewalld (both images)
+
+- **`firewall-offline-cmd`'s zone-scoped removal option is
+  `--remove-service-from-zone=<service>`.** Not `--remove-service`: that
+  looks similar but is a separate, mutually exclusive legacy "lokkit"
+  option ("Can't use lokkit options with other options"). Not
+  `--delete-service` either: that deletes the global service
+  *definition*, which fails for built-in services (`BUILTIN_SERVICE`)
+  such as `ssh` or `cockpit`. The equivalent for a policy is
+  `--remove-service-from-policy`.
+- **`--check-config` validates zone/policy/ipset wiring, not ipset
+  entries.** A policy referencing a missing ipset is caught
+  (`INVALID_IPSET`); an invalid address in an ipset is silently ignored,
+  and overlapping or empty ipsets are accepted. Anything that loads
+  ipset entries from external data has to validate them itself; see
+  `images/almalinux/geoblock_ipsets.py` and `PLAN.geoblock.md`.
 
 ## Design decisions
 
-- **The build context is the image folder, which mirrors the root
-  filesystem.** `COPY . /` puts every file at the path it has in the
-  folder. The Containerfile and `.containerignore` are excluded through
-  `.containerignore`. buildah only reads that file from the build context
-  root (or through `--ignorefile`), so each image folder has its own copy.
+- **The build context is the shared `images/` folder, not each image's
+  own folder.** `scripts/build.sh` passes `-f images/<name>/Containerfile`
+  with context `images/`. This is what lets
+  `images/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/ /`
+  to reuse fedora's base configuration instead of duplicating it. Each
+  image's own files live in `images/<name>/sysroot/`, which mirrors the
+  root filesystem. One `.containerignore` at `images/` (buildah only
+  reads it from the context root, or through `--ignorefile`) keeps every
+  `Containerfile` out of `COPY . /`; there is no need for a copy per
+  image folder.
 - **`COPY` rather than `ADD`.** `ADD` also downloads URLs and unpacks
-  archives, which we don't want for plain files.
+  archives, which we don't want for plain files. Exception:
+  `images/almalinux`'s build-only `geoblock` stage uses `ADD <url>` on
+  purpose, for its content-digest build cache (see `PLAN.geoblock.md`).
 - **Content goes in `/usr`, `/var` stays empty.** When deployed, `/usr` is
   read-only and replaced on every update. `/etc` is merged three ways on
   update. `/var` is machine-local state, copied from the image only at the

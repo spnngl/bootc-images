@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ipset type="hash:net">
+  <short>Non-global IPv6</short>
+  <description>Non-global IPv6 ranges: unspecified/loopback, NAT64, IVI, documentation, unique-local, link-local, deprecated site-local, multicast. Used by the geoblock policy. See PLAN.geoblock.md.</description>
+  <option name="family" value="inet6"/>
+  <entry>::/127</entry>
+  <entry>::ffff:0:0/96</entry>
+  <entry>64:ff9b:1::/48</entry>
+  <entry>100::/64</entry>
+  <entry>2001:db8::/32</entry>
+  <entry>fc00::/7</entry>
+  <entry>fe80::/10</entry>
+  <entry>fec0::/10</entry>
+  <entry>ff00::/8</entry>
+</ipset>

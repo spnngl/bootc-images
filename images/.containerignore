@@ -1,4 +1,5 @@
-# Build context: images/fedora/. Keep build files out of `COPY . /`.
+# Build context: images/, shared by every image folder. Keep build files
+# out of `COPY . /`.
 # https://github.com/containers/buildah/blob/main/docs/buildah-build.1.md#containerignoredockerignore
 Containerfile*
 .containerignore

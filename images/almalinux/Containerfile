@@ -12,10 +12,70 @@
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
 # Available tags: https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags
-FROM quay.io/almalinuxorg/almalinux-bootc:10.2
+FROM quay.io/almalinuxorg/almalinux-bootc:10.2 AS base
 
 USER root
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Build-only stage: downloads the France geo-blocking data and 10 public
+# threat feeds, then turns them into firewalld ipsets under /out. Nothing
+# from this stage reaches the final image except /out. See PLAN.geoblock.md.
+#
+# ADD, not RUN curl: buildah puts the digest of the downloaded content in
+# the build cache key, so changed data reruns the steps below and
+# unchanged data reuses the cache. Refreshing the data means rebuilding
+# the image; there is no timer or cron job.
+FROM base AS geoblock
+
+ADD --chmod=0644 \
+    https://www.ipdeny.com/ipblocks/data/aggregated/fr-aggregated.zone /out/usr/share/geoblock/fr-aggregated.zone
+ADD --chmod=0644 \
+    https://www.ipdeny.com/ipv6/ipaddresses/aggregated/fr-aggregated.zone /out/usr/share/geoblock/fr-aggregated-v6.zone
+# AbuseIPDB 100 % confidence score, last 24 h (~67 K)
+ADD --chmod=0644 \
+    https://raw.githubusercontent.com/borestad/blocklist-abuseipdb/refs/heads/main/abuseipdb-s100-1d.ipv4 /out/usr/share/geoblock/blocklists/abuseipdb.txt
+# FireHOL level 1 -- aggregated worst-of-the-worst netsets (~4.5 K)
+ADD --chmod=0644 \
+    https://iplists.firehol.org/files/firehol_level1.netset /out/usr/share/geoblock/blocklists/firehol-level1.txt
+# IPsum threat level >= 5 -- consensus across 5+ blacklists (~3.5 K)
+ADD --chmod=0644 \
+    https://raw.githubusercontent.com/stamparm/ipsum/refs/heads/master/levels/5.txt /out/usr/share/geoblock/blocklists/ipsum-level5.txt
+# Binary Defense ban list -- active attackers (~8 K)
+ADD --chmod=0644 \
+    https://binarydefense.com/banlist.txt /out/usr/share/geoblock/blocklists/binarydefense.txt
+# Spamhaus DROP -- hijacked/leased netblocks (~1.6 K CIDRs)
+ADD --chmod=0644 \
+    https://www.spamhaus.org/drop/drop.txt /out/usr/share/geoblock/blocklists/spamhaus-drop.txt
+# Romain Marcoux -- aggregated malicious IPs (40 K)
+ADD --chmod=0644 \
+    https://raw.githubusercontent.com/romainmarcoux/malicious-ip/refs/heads/main/full-40k.txt /out/usr/share/geoblock/blocklists/malicious-ip.txt
+# Data-Shield -- critical threat IPs (~101 K)
+ADD --chmod=0644 \
+    https://raw.githubusercontent.com/duggytuxy/Data-Shield_IPv4_Blocklist/refs/heads/main/prod_critical_data-shield_ipv4_blocklist.txt /out/usr/share/geoblock/blocklists/data-shield.txt
+# CINS Army -- top attackers by CINS score (~15 K)
+ADD --chmod=0644 \
+    https://cinsscore.com/list/ci-badguys.txt /out/usr/share/geoblock/blocklists/cinsscore.txt
+# blocklist.de -- fail2ban aggregated list (~22 K)
+ADD --chmod=0644 \
+    https://lists.blocklist.de/lists/all.txt /out/usr/share/geoblock/blocklists/blocklist-de.txt
+# Emerging Threats -- known compromised IPs
+ADD --chmod=0644 \
+    https://rules.emergingthreats.net/blockrules/compromised-ips.txt /out/usr/share/geoblock/blocklists/emerging-threats.txt
+COPY almalinux/geoblock_ipsets.py almalinux/test_geoblock_ipsets.py /geoblock/
+
+# firewall-offline-cmd --check-config does not validate ipset entries (see
+# PLAN.geoblock.md); geoblock_ipsets.py is the only thing that does, so its
+# tests run here, before it runs on the real data.
+RUN <<EORUN
+cd /geoblock
+python3 -m unittest -v
+
+mkdir -p /out/usr/lib/firewalld/ipsets
+python3 geoblock_ipsets.py /out/usr/share/geoblock /out/usr/lib/firewalld/ipsets
+EORUN
+
+
+FROM base
 
 RUN <<EORUN
 # Install base stuff + repos
@@ -38,12 +98,15 @@ ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
 sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
 grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 
+# Firewall
+#
 # Used ports
 # - 80+443: HTTP(S)
 # - 42022: sshd (etc/ssh/sshd_config.d/10-myssh.conf)
 #
 # TODO selinux one day
 firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
+firewall-offline-cmd --zone=public --remove-service-from-zone=cockpit --remove-service-from-zone=ssh
 
 # Systemd services
 systemctl disable NetworkManager
@@ -61,6 +124,14 @@ EORUN
 # directories too, and 0644 on /usr, /etc... breaks every non-root service
 # (systemd-resolved included).
 COPY --link ./fedora/sysroot/ /
+
+# Geo-blocking and blocklist ipsets built in the "geoblock" stage above.
+# This must come before the policies below: a policy that references a
+# missing ipset makes every firewall-offline-cmd call fail.
+COPY --link --from=geoblock /out/ /
+# Geo-blocking policies and the static bogon ipsets they use.
+COPY --link ./almalinux/sysroot/ /
+RUN firewall-offline-cmd --check-config
 
 # Keep this as the last instruction
 RUN bootc container lint
