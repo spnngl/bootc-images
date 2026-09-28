@@ -5,4 +5,7 @@
 #
 # See https://bootc.dev/bootc/bootc-install.html
 [install.filesystem.root]
-type = "btrfs"
+type = "xfs"
+
+[install]
+enforce-container-sigpolicy = true
