@@ -3,6 +3,30 @@
 # https://osbuild.org/docs/user-guide/blueprint-reference/
 
 [[customizations.user]]
-name = "admin"
+name = "coucou"
 key = "ssh-ed25519 AAAA... you@example.com"
 groups = ["wheel"]
+home = "/var/home/coucou"
+shell = "/bin/bash"
+
+# Optional registry pull secret, read by bootc and, through
+# images/fedora/usr/lib/tmpfiles.d/container-auth.conf, by root's podman and
+# docker. Keep only the registries you log in to: an invalid entry breaks
+# pulls from that registry. "auth" is base64 of "user:token":
+#   printf '%s' 'user:token' | base64
+# Docker Hub must use the "https://index.docker.io/v1/" key, the only one
+# docker reads (podman accepts it too).
+# [[customizations.files]]
+# path = "/etc/ostree/auth.json"
+# mode = "0640"
+# user = "root"
+# group = "wheel"
+# data = '''
+# {
+#   "auths": {
+#     "https://index.docker.io/v1/": { "auth": "BASE64_USER_TOKEN" },
+#     "ghcr.io": { "auth": "BASE64_USER_TOKEN" },
+#     "quay.io": { "auth": "BASE64_USER_TOKEN" }
+#   }
+# }
+# '''

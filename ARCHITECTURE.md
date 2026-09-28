@@ -46,6 +46,11 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
   blueprint: hostname, timezone, locale, NTP servers (chrony), DNS
   (systemd-resolved drop-in), sshd on port 42022 (SELinux port label and firewalld port),
   enabled and masked services. `config.toml` only holds the user.
+- Registry authentication: one pull secret, `/etc/ostree/auth.json`
+  (0640 root:wheel), machine-local and never in the container image. It
+  can be added to the disk image by `config.toml`.
+  bootc reads it directly. `usr/lib/tmpfiles.d/container-auth.conf` links
+  root's `~/.docker/config.json` to it, which podman and docker both read.
 - Firewall: `public` zone opens 80/443/42022, then drops `ssh` (22) and
   `cockpit` from it (sshd only listens on 42022, and cockpit isn't
   installed). See "Firewalld" below for the `firewall-offline-cmd` option
