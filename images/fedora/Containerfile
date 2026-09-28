@@ -3,7 +3,7 @@
 # Minimal derived Fedora bootc image.
 #
 # Build command:
-#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora-bootc:44 images/
+#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora:44 images/
 #
 # scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
 # boots it in QEMU.

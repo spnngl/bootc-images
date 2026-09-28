@@ -1,5 +1,5 @@
 # Lint and build every bootc container image, then push it to
-# ghcr.io/spnngl/bootc-images/<name>-bootc:<version>, <version> being the
+# ghcr.io/spnngl/bootc-images/<name>:<version>, <version> being the
 # base image major release (the Containerfile's BASE_VERSION build arg).
 # Pull requests only lint and build, they never push.
 #
@@ -86,7 +86,7 @@ jobs:
     env:
       NAME: ${{ matrix.name }}
       VERSION: ${{ matrix.version }}
-      TAG: ghcr.io/spnngl/bootc-images/${{ matrix.name }}-bootc:${{ matrix.version }}
+      TAG: ghcr.io/spnngl/bootc-images/${{ matrix.name }}:${{ matrix.version }}
     steps:
       - uses: actions/checkout@v7
       # Same command as scripts/build.sh: context is images/, and

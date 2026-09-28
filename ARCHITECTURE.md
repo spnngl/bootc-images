@@ -144,7 +144,7 @@ verification still to do; summary:
 - **The base image is pinned to a major release, `ARG BASE_VERSION`
   (`44`).** `latest` would jump to the next Fedora release without
   warning. The same value is the image's own tag, so a host tracking
-  `fedora-bootc:44` gets every rebuild through `bootc upgrade`, and only
+  `bootc-images/fedora:44` gets every rebuild through `bootc upgrade`, and only
   moves to the next release with `bootc switch`. The Containerfile default
   is for local builds; CI passes it from its matrix.
 - **`bootc container lint` without `--fatal-warnings`.** Errors fail the
@@ -181,7 +181,7 @@ includes the former bootc-image-builder) with:
   `output/<name>/<name>.qcow2`. The default name depends on the distro and
   architecture.
 
-Images are tagged `ghcr.io/spnngl/bootc-images/<name>-bootc:<version>`,
+Images are tagged `ghcr.io/spnngl/bootc-images/<name>:<version>`,
 `<version>` being the Containerfile's `ARG BASE_VERSION` default: the
 same name CI pushes, so an installed host upgrades from CI's images.
 `build.sh` never pushes.
@@ -190,7 +190,7 @@ same name CI pushes, so an installed host upgrades from CI's images.
 
 Runs hadolint on each Containerfile (findings uploaded to code scanning as
 SARIF), then builds each image of its matrix (`name`, `version`)
-and pushes it to `ghcr.io/spnngl/bootc-images/<name>-bootc:<version>`,
+and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version>`,
 authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.
 
