@@ -1,0 +1,102 @@
+# Lint and build every bootc container image, then push it to
+# ghcr.io/spnngl/bootc-images/<name>-bootc:<version>, <version> being the
+# base image major release (the Containerfile's BASE_VERSION build arg).
+# Pull requests only lint and build, they never push.
+#
+# Only the container image is built here. Disk images stay local
+# (scripts/build.sh): they need config.toml, which holds credentials.
+name: build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  # Weekly rebuild
+  schedule:
+    - cron: "0 7 * * 0"
+      timezone: Europe/Paris
+  workflow_dispatch:
+
+# Every run on main pushes the same tags: cancel the older run so it can't
+# overwrite the newer one's images.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  hadolint:
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        containerfile:
+          - images/fedora/Containerfile
+          - images/almalinux/Containerfile
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: ${{ matrix.containerfile }}
+          format: sarif
+          output-file: hadolint-results.sarif
+          failure-threshold: warning
+
+      - name: Upload Hadolint results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: hadolint-results.sarif
+          # Code scanning tracks alerts per category: keep it stable per
+          # file so fixed findings close.
+          category: hadolint-${{ matrix.containerfile }}
+        if: always()
+
+  build:
+    needs: hadolint
+    # Podman 5.7 / Buildah 1.42 preinstalled: the Containerfiles use
+    # COPY --link (buildah 1.41+). ubuntu-24.04 (ubuntu-latest) only has
+    # buildah 1.33.
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # version: base image tag, also this image's tag. Quoted: YAML would
+        # read 10.10 as the number 10.1. Bumping it is its own change, along
+        # with the Containerfile's ARG BASE_VERSION default.
+        include:
+          - name: fedora
+            version: "44"
+          - name: almalinux
+            version: "10.2"
+    env:
+      NAME: ${{ matrix.name }}
+      VERSION: ${{ matrix.version }}
+      TAG: ghcr.io/spnngl/bootc-images/${{ matrix.name }}-bootc:${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v7
+      # Same command as scripts/build.sh: context is images/, and
+      # --format=docker because the OCI format drops SHELL. The source label
+      # links the ghcr.io package to this repository.
+      - run: >-
+          podman build --format=docker --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" -t "${TAG}" images/
+      - if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |-
+          podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
+          podman push "${TAG}"

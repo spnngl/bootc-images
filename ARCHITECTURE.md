@@ -17,6 +17,8 @@ There are two stages:
 
 ```
 .
+├── .github/workflows/build.yml # CI: lint, build, push every image to ghcr.io
+├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
 │   └── <name>/                 # one folder per image
@@ -55,7 +57,7 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
   `cockpit` from it (sshd only listens on 42022, and cockpit isn't
   installed). See "Firewalld" below for the `firewall-offline-cmd` option
   this needs.
-- Ends with `bootc container lint --fatal-warnings`.
+- Ends with `bootc container lint`.
 
 ### `images/almalinux`
 
@@ -137,10 +139,17 @@ verification still to do; summary:
   config must be machine-local, and nothing in `/var`.
 - **`COPY` comes after the package install.** Editing config files doesn't
   force dnf to run again on rebuild.
-- **The base image is pinned to a major release (`:44`).** `latest` would
-  jump to the next Fedora release without warning.
-- **Lint with `--fatal-warnings`.** Mistakes like leftover log files fail
-  the build instead of only printing a warning.
+- **The base image is pinned to a major release, `ARG BASE_VERSION`
+  (`44`).** `latest` would jump to the next Fedora release without
+  warning. The same value is the image's own tag, so a host tracking
+  `fedora-bootc:44` gets every rebuild through `bootc upgrade`, and only
+  moves to the next release with `bootc switch`. The Containerfile default
+  is for local builds; CI passes it from its matrix.
+- **`bootc container lint` without `--fatal-warnings`.** Errors fail the
+  build, warnings are only printed.
+- **hadolint on every Containerfile** (`.hadolint.yaml`). DL3041 (pin
+  dnf package versions) is ignored: packages follow the pinned base
+  release, like the base image does.
 - **One `RUN <<EORUN` heredoc with `set -xeuo pipefail`.** It gives one
   layer without `&& \` chains. `-e` is required because a heredoc `RUN`
   only fails on the exit status of its last command. Heredocs need
@@ -156,8 +165,8 @@ includes the former bootc-image-builder) with:
   confined container fails with `chcon: ... Permission denied`.
 - **`-v /var/lib/containers/storage:/var/lib/containers/storage`:**
   image-builder never pulls the bootc image. It reads it from the host's
-  rootful storage. Without this mount it tries to pull `localhost/...` from
-  a registry and fails.
+  rootful storage. Without this mount it tries to pull the tag from
+  ghcr.io instead of using the image just built.
 - **Rootful podman:** image-builder checks for it. On macOS use
   `podman machine set --rootful`. The podman client then talks to the
   rootful machine, so `sudo` isn't used.
@@ -170,7 +179,32 @@ includes the former bootc-image-builder) with:
   `output/<name>/<name>.qcow2`. The default name depends on the distro and
   architecture.
 
-Images are tagged `localhost/<name>-bootc:latest`.
+Images are tagged `ghcr.io/spnngl/bootc-images/<name>-bootc:<version>`,
+`<version>` being the Containerfile's `ARG BASE_VERSION` default: the
+same name CI pushes, so an installed host upgrades from CI's images.
+`build.sh` never pushes.
+
+## CI: `.github/workflows/build.yml`
+
+Runs hadolint on each Containerfile (findings uploaded to code scanning as
+SARIF), then builds each image of its matrix (`name`, `version`)
+and pushes it to `ghcr.io/spnngl/bootc-images/<name>-bootc:<version>`,
+authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
+Container images only: disk images need `config.toml`.
+
+- **Triggers:** push to `main`, every Sunday 07:00 Europe/Paris (base
+  image and package updates, fresh almalinux geo-blocking data) and
+  manual dispatch all push. Pull requests only lint and build.
+- **The matrix is the list of images**, each with its base version,
+  passed as `--build-arg BASE_VERSION`. A new image or a version bump
+  goes there too.
+- **Jobs run on `ubuntu-26.04`, not `ubuntu-latest`.** It ships Podman
+  5.7 / Buildah 1.42; `ubuntu-latest` (24.04) has buildah 1.33, and the
+  Containerfiles use `COPY --link` (buildah 1.41+). Builds use the
+  runner's rootless podman, where `build.sh` uses rootful podman.
+- **Same `podman build` flags as `build.sh`** (`--format=docker`, context
+  `images/`), plus an `org.opencontainers.image.source` label that links
+  the ghcr.io package to the repository.
 
 ## Running: `scripts/run.sh`
 

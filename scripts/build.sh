@@ -3,6 +3,9 @@
 # qcow2 disk image with image-builder.
 #
 # Usage: scripts/build.sh [name]    (default: fedora)
+# Image:  ghcr.io/spnngl/bootc-images/<name>-bootc:<version>, <version> being
+#         the Containerfile's ARG BASE_VERSION default: the same name CI
+#         pushes (.github/workflows/build.yml). Not pushed.
 # Output: output/<name>/<name>.qcow2
 #
 # Requirements:
@@ -13,7 +16,6 @@
 set -euo pipefail
 
 name="${1:-fedora}"
-tag="localhost/${name}-bootc:latest"
 cd "$(dirname "$0")/.."
 
 die() {
@@ -21,12 +23,16 @@ die() {
     exit 1
 }
 
-[[ -f "images/${name}/Containerfile" ]] || die "images/${name}/Containerfile not found"
+containerfile="images/${name}/Containerfile"
+[[ -f ${containerfile} ]] || die "${containerfile} not found"
+version="$(sed -n -E 's/^ARG BASE_VERSION=([^[:space:]]+).*/\1/p' "${containerfile}")"
+[[ -n ${version} ]] || die "${containerfile} has no ARG BASE_VERSION=<version>"
+tag="ghcr.io/spnngl/bootc-images/${name}-bootc:${version}"
 [[ -f config.toml ]] || die "config.toml not found, start from: cp config.example.toml config.toml"
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
     die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
 
-podman build --format=docker -f "images/${name}/Containerfile" -t "${tag}" "images/"
+podman build --format=docker -f "${containerfile}" -t "${tag}" "images/"
 
 # --privileged and label=type:unconfined_t: image-builder relabels files and
 # sets up loop devices, which a confined container is not allowed to do.

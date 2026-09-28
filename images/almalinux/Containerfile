@@ -3,7 +3,7 @@
 # Minimal derived AlmaLinux bootc image.
 #
 # Build command:
-#   podman build -f images/almalinux/Containerfile -t localhost/almalinux-bootc:latest images/almalinux
+#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/bootc-images/almalinux-bootc:10.2 images/
 #
 # scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
 # boots it in QEMU.
@@ -11,10 +11,12 @@
 # NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
+# Base image major release, also the tag of this image. CI sets it with
+# --build-arg (.github/workflows/build.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags
-FROM quay.io/almalinuxorg/almalinux-bootc:10.2 AS base
+ARG BASE_VERSION=10.2
+FROM quay.io/almalinuxorg/almalinux-bootc:${BASE_VERSION} AS base
 
-USER root
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 # Build-only stage: downloads the France geo-blocking data and 10 public
@@ -66,8 +68,8 @@ COPY almalinux/geoblock_ipsets.py almalinux/test_geoblock_ipsets.py /geoblock/
 # firewall-offline-cmd --check-config does not validate ipset entries (see
 # PLAN.geoblock.md); geoblock_ipsets.py is the only thing that does, so its
 # tests run here, before it runs on the real data.
+WORKDIR /geoblock
 RUN <<EORUN
-cd /geoblock
 python3 -m unittest -v
 
 mkdir -p /out/usr/lib/firewalld/ipsets
@@ -133,5 +135,6 @@ COPY --link --from=geoblock /out/ /
 COPY --link ./almalinux/sysroot/ /
 RUN firewall-offline-cmd --check-config
 
-# Keep this as the last instruction
+# Keep this as the last instruction, on its own.
+# hadolint ignore=DL3059
 RUN bootc container lint

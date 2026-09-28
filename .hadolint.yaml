@@ -1,0 +1,15 @@
+no-color: false
+strict-labels: true
+disable-ignore-pragma: false
+failure-threshold: warning
+ignored:
+  # Pin dnf package versions: the base image is pinned to a major release
+  # and packages follow it, like the base image itself does.
+  - DL3041
+trustedRegistries:
+  - dhi.io
+  - docker.io
+  - gcr.io
+  - ghcr.io
+  # Base images: fedora-bootc, almalinux-bootc
+  - quay.io

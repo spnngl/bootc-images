@@ -36,8 +36,13 @@ Check the source rather than blog posts or memory:
   ship.
 - Never bake users, passwords, SSH keys or pull secrets into images. Login
   credentials go in `config.toml` (git-ignored). See `config.example.toml`.
-- Pin the base image to a major release. Bumping it is its own change.
-- The last instruction must be `RUN bootc container lint --fatal-warnings`.
+- Pin the base image to a major release with `ARG BASE_VERSION=<version>`
+  before `FROM`. It is also the image's tag. CI passes it from the
+  `.github/workflows/build.yml` matrix: bump both, as their own change.
+- New image: add it to both workflow matrices too (`hadolint` and `build`).
+- Must pass `hadolint` (config: `.hadolint.yaml`). Fix findings; ignore
+  one only with a comment saying why.
+- The last instruction must be `RUN bootc container lint`.
 - Comment every significant step with *why*, and link docs when useful.
 
 ## Scripts
@@ -54,6 +59,7 @@ Check the source rather than blog posts or memory:
 scripts/build.sh <name>   # needs rootful podman and ./config.toml
 scripts/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
 shellcheck scripts/*.sh
+podman run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint images/*/Containerfile
 ```
 
 If you can't run a build (for example no podman), say so explicitly

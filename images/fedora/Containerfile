@@ -3,7 +3,7 @@
 # Minimal derived Fedora bootc image.
 #
 # Build command:
-#   podman build -f images/fedora/Containerfile -t localhost/fedora-bootc:latest images/fedora
+#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora-bootc:44 images/
 #
 # scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
 # boots it in QEMU.
@@ -11,10 +11,12 @@
 # NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
+# Base image major release, also the tag of this image. CI sets it with
+# --build-arg (.github/workflows/build.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
-FROM quay.io/fedora/fedora-bootc:44
+ARG BASE_VERSION=44
+FROM quay.io/fedora/fedora-bootc:${BASE_VERSION}
 
-USER root
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 RUN <<EORUN
@@ -63,4 +65,5 @@ EORUN
 COPY --link ./fedora/sysroot/ /
 
 # Keep this as the last instruction
+# hadolint ignore=DL3059
 RUN bootc container lint
