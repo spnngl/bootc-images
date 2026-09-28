@@ -1,9 +1,9 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Minimal derived Fedora bootc image.
+# Minimal derived AlmaLinux bootc image.
 #
 # Build command:
-#   podman build -f images/fedora/Containerfile -t localhost/fedora-bootc:latest images/fedora
+#   podman build -f images/almalinux/Containerfile -t localhost/almalinux-bootc:latest images/almalinux
 #
 # scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
 # boots it in QEMU.
@@ -11,21 +11,20 @@
 # NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
-# Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
-FROM quay.io/fedora/fedora-bootc:44
+# Available tags: https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags
+FROM quay.io/almalinuxorg/almalinux-bootc:10.2
 
 USER root
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 RUN <<EORUN
 # Install base stuff + repos
-dnf -y install ca-certificates dnf-plugins-core dnf5-plugins glibc-langpack-en glibc-langpack-fr \
+dnf -y install ca-certificates dnf-plugins-core glibc-langpack-en glibc-langpack-fr epel-release \
     sysstat iproute iputils procps-ng util-linux coreutils e2fsprogs mdadm lvm2 cryptsetup
-# See https://docs.docker.com/engine/install/fedora/
-dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
+dnf-3 config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
 # Install packages
-dnf -y install tree htop btrfs-progs firewalld netcat vim git nftables podman buildah systemd-networkd \
+dnf -y install tree htop btrfs-progs firewalld netcat vim git nftables podman buildah systemd-networkd systemd-resolved \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-model-plugin
 dnf -y autoremove
 dnf clean all
@@ -49,14 +48,18 @@ firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
 # Systemd services
 systemctl disable NetworkManager
 systemctl mask NetworkManager
-systemctl enable sshd.service firewalld.service systemd-networkd.service \
+systemctl enable sshd.service firewalld.service \
+    systemd-resolved.service systemd-networkd.service \
     docker.service containerd.service mdmonitor.service
 
 # Cleanup
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
-# Copy static configuration files
+# Copy static configuration files, keeping the modes of the build context
+# (0755 directories, 0644 files). No --chmod: buildah applies it to
+# directories too, and 0644 on /usr, /etc... breaks every non-root service
+# (systemd-resolved included).
 COPY --link ./fedora/sysroot/ /
 
 # Keep this as the last instruction
