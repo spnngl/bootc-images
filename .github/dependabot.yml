@@ -1,0 +1,23 @@
+# Keeps the workflow's actions up to date.
+#
+# Base images are not covered: FROM takes its tag from ARG BASE_VERSION,
+# and moving to the next distro release is its own change (AGENTS.md).
+# Docs: https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    # The day before the weekly rebuild (Sunday 07:00, build.yml), so a
+    # merged update is picked up by it.
+    schedule:
+      interval: weekly
+      day: saturday
+      time: "07:00"
+      timezone: Europe/Paris
+    # One pull request for all actions, not one per action.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: ci

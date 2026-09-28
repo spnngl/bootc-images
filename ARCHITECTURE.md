@@ -17,7 +17,9 @@ There are two stages:
 
 ```
 .
-├── .github/workflows/build.yml # CI: lint, build, push every image to ghcr.io
+├── .github/
+│   ├── dependabot.yml          # Saturday updates of the workflow's actions
+│   └── workflows/build.yml     # CI: lint, build, push every image to ghcr.io
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
