@@ -54,7 +54,7 @@ rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
 # Copy static configuration files
-COPY . /
+COPY --chmod=0644 ./sysroot/ /
 
 # Keep this as the last instruction
 RUN bootc container lint
