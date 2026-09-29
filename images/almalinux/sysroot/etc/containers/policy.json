@@ -1,0 +1,40 @@
+{
+    "default": [
+        {
+            "type": "reject"
+        }
+    ],
+    "transports": {
+        "docker": {
+            "ghcr.io/spnngl/bootc-images": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPath": "/usr/share/pki/containers/spnngl-bootc-images.pub"
+                }
+            ],
+            "registry.access.redhat.com": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPath": "/etc/pki/sigstore/SIGSTORE-redhat-release3",
+                    "rekorPublicKeyPath": "/etc/pki/sigstore/REKOR-signing-key"
+                }
+            ],
+            "registry.redhat.io": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPath": "/etc/pki/sigstore/SIGSTORE-redhat-release3",
+                    "rekorPublicKeyPath": "/etc/pki/sigstore/REKOR-signing-key"
+                }
+            ],
+            "": [{"type": "insecureAcceptAnything"}]
+        },
+        "containers-storage": {"": [{"type": "insecureAcceptAnything"}]},
+        "dir": {"": [{"type": "insecureAcceptAnything"}]},
+        "docker-archive": {"": [{"type": "insecureAcceptAnything"}]},
+        "docker-daemon": {"": [{"type": "insecureAcceptAnything"}]},
+        "oci": {"": [{"type": "insecureAcceptAnything"}]},
+        "oci-archive": {"": [{"type": "insecureAcceptAnything"}]},
+        "sif": {"": [{"type": "insecureAcceptAnything"}]},
+        "tarball": {"": [{"type": "insecureAcceptAnything"}]}
+    }
+}

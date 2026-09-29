@@ -1,0 +1,7 @@
+# Signatures of ghcr.io/spnngl/bootc-images/* are sigstore attachments
+# (sha256-<digest>.sig tags next to the image), signed by CI. Needed to read
+# them (bootc, podman, skopeo) and, on the CI runner, to write them.
+# See containers-registries.d(5) and ARCHITECTURE.md, "Signing".
+docker:
+  ghcr.io/spnngl/bootc-images:
+    use-sigstore-attachments: true

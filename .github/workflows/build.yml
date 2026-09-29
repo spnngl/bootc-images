@@ -94,9 +94,31 @@ jobs:
       # links the ghcr.io package to this repository.
       - run: >-
           podman build --format=docker --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" -t "${TAG}" images/
+      # Install the files hosts get from the image, at the same paths: the
+      # push only writes sigstore signatures where registries.d enables them,
+      # and the check below reads the key from the path policy.json names.
+      - if: github.event_name != 'pull_request'
+        run: |-
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ images/fedora/sysroot/etc/containers/registries.d/spnngl-bootc-images.yaml
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ images/fedora/sysroot/usr/share/pki/containers/spnngl-bootc-images.pub
+      # Only CI signs: local builds (scripts/build.sh) are never pushed.
+      # podman, not cosign: cosign 3 stores signatures as a sigstore bundle
+      # (OCI referrers), which containers/image (bootc, podman, skopeo) can't
+      # read. podman writes the sha256-<digest>.sig attachments it reads, and
+      # takes cosign keys. RUNNER_TEMP is emptied at the end of the job.
+      # The key has no passphrase: --sign-passphrase-file /dev/null gives an
+      # empty one, without it podman prompts for it.
       - if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
         run: |-
+          umask 077
+          printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${RUNNER_TEMP}/cosign.key"
           podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
-          podman push "${TAG}"
+          podman push --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null "${TAG}"
+      # Pull it back with the policy.json this image ships: fails if the
+      # signing key doesn't match the committed public key, which would make
+      # hosts refuse every upgrade.
+      - if: github.event_name != 'pull_request'
+        run: podman pull --signature-policy "images/${NAME}/sysroot/etc/containers/policy.json" "${TAG}"

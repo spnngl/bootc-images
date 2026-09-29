@@ -39,6 +39,9 @@ Check the source rather than blog posts or memory:
 - Pin the base image to a major release with `ARG BASE_VERSION=<version>`
   before `FROM`. It is also the image's tag. CI passes it from the
   `.github/workflows/build.yml` matrix: bump both, as their own change.
+  Also compare the new base's `/etc/containers/policy.json` with
+  `images/<name>/sysroot/etc/containers/policy.json` (see ARCHITECTURE.md,
+  "Signing").
 - New image: add it to both workflow matrices too (`hadolint` and `build`).
 - Must pass `hadolint` (config: `.hadolint.yaml`). Fix findings; ignore
   one only with a comment saying why.

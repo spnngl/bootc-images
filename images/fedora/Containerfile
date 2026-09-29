@@ -28,6 +28,7 @@ dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fed
 
 # Install packages
 dnf -y install tree htop btrfs-progs firewalld netcat vim git nftables podman buildah systemd-networkd \
+    containers-common \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-model-plugin
 dnf -y autoremove
 dnf clean all

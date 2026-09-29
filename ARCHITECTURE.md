@@ -55,6 +55,8 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
   can be added to the disk image by `config.toml`.
   bootc reads it directly. `usr/lib/tmpfiles.d/container-auth.conf` links
   root's `~/.docker/config.json` to it, which podman and docker both read.
+- Image signature verification: `ghcr.io/spnngl/bootc-images/*` must be
+  signed by CI's key. See "Signing" below.
 - Firewall: `public` zone opens 80/443/42022, then drops `ssh` (22) and
   `cockpit` from it (sshd only listens on 42022, and cockpit isn't
   installed). See "Firewalld" below for the `firewall-offline-cmd` option
@@ -207,6 +209,43 @@ Container images only: disk images need `config.toml`.
 - **Same `podman build` flags as `build.sh`** (`--format=docker`, context
   `images/`), plus an `org.opencontainers.image.source` label that links
   the ghcr.io package to the repository.
+- **Pushed images are signed**, then pulled back with the image's own
+  `policy.json` to check the signature. See "Signing".
+
+## Signing
+
+CI signs every image it pushes with a cosign key pair; hosts refuse
+`ghcr.io/spnngl/bootc-images/*` images without that signature. Local
+builds are not signed: `build.sh` never pushes, and a host installed from
+a local build upgrades from CI's signed images.
+
+- **Keys:** the private key is the `COSIGN_PRIVATE_KEY` repository secret,
+  never in git. It has no passphrase (CI passes an empty one).
+  With one, add a secret and write it to the `--sign-passphrase-file`. The public key is
+  `images/fedora/sysroot/usr/share/pki/containers/spnngl-bootc-images.pub`,
+  in `/usr` so that it updates with the image.
+- **`podman push --sign-by-sigstore-private-key`, not `cosign sign`.**
+  bootc verifies through containers/image (skopeo), which reads sigstore
+  signatures as `sha256-<digest>.sig` attachments only. cosign 3 stores
+  them by default as a sigstore bundle behind OCI referrers, which
+  containers/image can't see. podman writes the attachment format and
+  takes cosign keys (`ENCRYPTED SIGSTORE PRIVATE KEY`). No Rekor
+  transparency log entry is made; the policy doesn't ask for one.
+- **`etc/containers/registries.d/spnngl-bootc-images.yaml`** turns on
+  `use-sigstore-attachments` for our namespace: needed to read the
+  signatures on hosts, and to write them in CI.
+- **`etc/containers/policy.json`, one per image** (almalinux's overrides
+  fedora's): the base image's file, plus a `sigstoreSigned` requirement
+  for `ghcr.io/spnngl/bootc-images`. It replaces the file shipped by
+  `containers-common`, since `policy.json` has no drop-in directory.
+  When a base image changes its `policy.json`, port the change.
+- **`"default": reject`** is what `enforce-container-sigpolicy = true`
+  (`usr/lib/bootc/install/50-rootfs.toml`) requires: bootc refuses to pull
+  when the default is `insecureAcceptAnything`. Every transport, and every
+  other registry, still accepts anything as before, so podman keeps working
+  (`containers-storage` is also how image-builder installs a local build).
+- **Rotating the key:** ship the new public key alongside the old one
+  (`keyPaths`), let hosts upgrade, then switch the CI secret.
 
 ## Running: `scripts/run.sh`
 

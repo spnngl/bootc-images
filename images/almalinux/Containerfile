@@ -87,6 +87,7 @@ dnf-3 config-manager --add-repo https://download.docker.com/linux/centos/docker-
 
 # Install packages
 dnf -y install tree htop btrfs-progs firewalld netcat vim git nftables podman buildah systemd-networkd systemd-resolved \
+    containers-common \
     docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-model-plugin
 dnf -y autoremove
 dnf clean all
