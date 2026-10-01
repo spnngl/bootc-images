@@ -75,23 +75,21 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # version: base image tag, also this image's tag. Quoted: YAML would
-        # read 10.10 as the number 10.1. Bumping it is its own change, along
-        # with the Containerfile's ARG BASE_VERSION default.
-        # platforms: the entries of the image's manifest list, one tag for all.
-        # Each --platform picks the matching base image entry.
-        # almalinux: linux/amd64 is x86-64-v3 (the AlmaLinux 10 baseline,
-        # like its base image), linux/amd64/v2 is for older CPUs. Hosts only
-        # get v2 when they ask for it (--platform linux/amd64/v2):
-        # containers/image doesn't detect x86-64 levels. See ARCHITECTURE.md.
-        # fedora: its base has no x86-64 level variants (x86-64 baseline).
+        # fedora-bootc:44.x only got x86-64-v3 images
+        # almalinux-bootc:10.x got x86-64-v3 and x86-64-v2 images, BUT docker-ce
+        # official repo only got v3 binaries
+        #
+        # Building almalinux:9.x to get v2 binaries without issues, EOL is 2032.
         include:
           - name: fedora
             version: "44"
             platforms: linux/amd64,linux/arm64
           - name: almalinux
+            version: "9.8"
+            platforms: linux/amd64,linux/arm64
+          - name: almalinux
             version: "10.2"
-            platforms: linux/amd64,linux/amd64/v2,linux/arm64
+            platforms: linux/amd64,linux/arm64
     env:
       NAME: ${{ matrix.name }}
       VERSION: ${{ matrix.version }}
