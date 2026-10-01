@@ -101,6 +101,15 @@ verification still to do; summary:
 - Kill switch: copy a policy file to `/etc/firewalld/policies/`, add
   `<disable/>`, `firewall-cmd --reload`. Disable `geoblock` and
   `blocklist` together, not just one.
+- Two x86_64 builds, like the base image: `linux/amd64` targets
+  x86-64-v3, the AlmaLinux 10 baseline, and its glibc aborts with `CPU
+  does not support x86-64-v3` on older CPUs such as the Intel Atom C2338.
+  `linux/amd64/v2` (`x86_64_v2` RPMs, EPEL from AlmaLinux's AltArch
+  rebuild) runs on those. containers/image (podman, bootc) doesn't
+  detect x86-64 levels: on amd64 it always picks the entry without a
+  variant, so v2 is only used when asked for (`podman run --platform
+  linux/amd64/v2`). bootc has no such option: `bootc upgrade` and
+  `bootc switch` always fetch `linux/amd64`. See "Known limits".
 
 ### Firewalld (both images)
 
@@ -191,8 +200,9 @@ same name CI pushes, so an installed host upgrades from CI's images.
 ## CI: `.github/workflows/build.yml`
 
 Runs hadolint on each Containerfile (findings uploaded to code scanning as
-SARIF), then builds each image of its matrix (`name`, `version`)
-and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version>`,
+SARIF), then builds each image of its matrix (`name`, `version`, `platforms`)
+and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version>`, one
+manifest list for all platforms,
 authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.
 
@@ -208,7 +218,13 @@ Container images only: disk images need `config.toml`.
   runner's rootless podman, where `build.sh` uses rootful podman.
 - **Same `podman build` flags as `build.sh`** (`--format=docker`, context
   `images/`), plus an `org.opencontainers.image.source` label that links
-  the ghcr.io package to the repository.
+  the ghcr.io package to the repository, and `--platform <list>
+  --manifest <tag>` for the manifest list.
+- **Every platform on one amd64 runner:** arm64 runs under QEMU
+  (`docker/setup-qemu-action`), which is slow but needs no second job to
+  merge the lists. Platforms build one after the other, and each
+  downloads almalinux's geo-blocking data itself, so the data can differ
+  slightly between platforms.
 - **Pushed images are signed**, then pulled back with the image's own
   `policy.json` to check the signature. See "Signing".
 
@@ -262,9 +278,15 @@ It only supports macOS on Apple Silicon, and says so when run anywhere else.
 - `run.sh` only supports macOS on Apple Silicon.
 - Only qcow2 is built. For other formats, change the image type in
   `build.sh` (for example `anaconda-iso`, `raw`, `vmdk`).
-- Images match the host architecture. Building for x86_64 on an arm Mac
-  needs `podman build --platform linux/amd64` and a target architecture
-  option for image-builder. This is experimental and emulated, so slow.
+- `build.sh` builds for the host architecture only. Building for x86_64
+  on an arm Mac needs `podman build --platform linux/amd64` and a target
+  architecture option for image-builder. This is experimental and
+  emulated, so slow.
+- **almalinux on x86-64-v2 CPUs (e.g. Intel Atom C2338):** install with
+  `podman run --platform linux/amd64/v2 ...`. `bootc upgrade` then
+  fetches `linux/amd64`, the x86-64-v3 build, and the new deployment
+  won't boot (pick the previous one in GRUB, or `bootc rollback`).
+  Upgrades on such hosts need a tag that points at the v2 build only.
 
 ## References
 

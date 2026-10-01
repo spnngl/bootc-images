@@ -78,22 +78,39 @@ jobs:
         # version: base image tag, also this image's tag. Quoted: YAML would
         # read 10.10 as the number 10.1. Bumping it is its own change, along
         # with the Containerfile's ARG BASE_VERSION default.
+        # platforms: the entries of the image's manifest list, one tag for all.
+        # Each --platform picks the matching base image entry.
+        # almalinux: linux/amd64 is x86-64-v3 (the AlmaLinux 10 baseline,
+        # like its base image), linux/amd64/v2 is for older CPUs. Hosts only
+        # get v2 when they ask for it (--platform linux/amd64/v2):
+        # containers/image doesn't detect x86-64 levels. See ARCHITECTURE.md.
+        # fedora: its base has no x86-64 level variants (x86-64 baseline).
         include:
           - name: fedora
             version: "44"
+            platforms: linux/amd64,linux/arm64
           - name: almalinux
             version: "10.2"
+            platforms: linux/amd64,linux/amd64/v2,linux/arm64
     env:
       NAME: ${{ matrix.name }}
       VERSION: ${{ matrix.version }}
+      PLATFORMS: ${{ matrix.platforms }}
       TAG: ghcr.io/spnngl/bootc-images/${{ matrix.name }}:${{ matrix.version }}
     steps:
       - uses: actions/checkout@v7
-      # Same command as scripts/build.sh: context is images/, and
-      # --format=docker because the OCI format drops SHELL. The source label
-      # links the ghcr.io package to this repository.
+      # arm64 is built under QEMU emulation on this amd64 runner: slow, but
+      # one job builds the whole manifest list. binfmt is kernel-wide, so
+      # the runner's podman uses it too.
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      # Same flags as scripts/build.sh: context is images/, and
+      # --format=docker because the OCI format drops SHELL. --manifest
+      # builds one image per platform, in a manifest list named TAG. The
+      # source label links the ghcr.io package to this repository.
       - run: >-
-          podman build --format=docker --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" -t "${TAG}" images/
+          podman build --format=docker --platform "${PLATFORMS}" --manifest "${TAG}" --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
       # Install the files hosts get from the image, at the same paths: the
       # push only writes sigstore signatures where registries.d enables them,
       # and the check below reads the key from the path policy.json names.
@@ -108,6 +125,8 @@ jobs:
       # takes cosign keys. RUNNER_TEMP is emptied at the end of the job.
       # The key has no passphrase: --sign-passphrase-file /dev/null gives an
       # empty one, without it podman prompts for it.
+      # manifest push signs the list (what bootc checks) and every image in
+      # it (what podman checks).
       - if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -116,9 +135,13 @@ jobs:
           umask 077
           printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${RUNNER_TEMP}/cosign.key"
           podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
-          podman push --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null "${TAG}"
-      # Pull it back with the policy.json this image ships: fails if the
-      # signing key doesn't match the committed public key, which would make
-      # hosts refuse every upgrade.
+          podman manifest push --all --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null "${TAG}" "docker://${TAG}"
+      # Pull every platform back with the policy.json this image ships: fails
+      # if the signing key doesn't match the committed public key, which
+      # would make hosts refuse every upgrade.
       - if: github.event_name != 'pull_request'
-        run: podman pull --signature-policy "images/${NAME}/sysroot/etc/containers/policy.json" "${TAG}"
+        run: |-
+          IFS=, read -r -a platforms <<< "${PLATFORMS}"
+          for platform in "${platforms[@]}"; do
+            podman pull --platform "${platform}" --signature-policy "images/${NAME}/sysroot/etc/containers/policy.json" "${TAG}"
+          done
