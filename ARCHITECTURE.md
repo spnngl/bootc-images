@@ -109,7 +109,13 @@ verification still to do; summary:
   detect x86-64 levels: on amd64 it always picks the entry without a
   variant, so v2 is only used when asked for (`podman run --platform
   linux/amd64/v2`). bootc has no such option: `bootc upgrade` and
-  `bootc switch` always fetch `linux/amd64`. See "Known limits".
+  `bootc switch` always fetch `linux/amd64`. So CI also pushes the v2
+  image alone, not in a list, as `almalinux:<version>-x86-64-v2`:
+  x86-64-v2 hosts install from that tag (no `--platform` needed), and
+  `bootc install` makes it their upgrade source. A host installed from
+  `almalinux:<version>` with `--platform linux/amd64/v2` would upgrade
+  to the v3 build and fail to boot: move it first with `bootc switch
+  ghcr.io/spnngl/bootc-images/almalinux:<version>-x86-64-v2`.
 
 ### Firewalld (both images)
 
@@ -202,7 +208,8 @@ same name CI pushes, so an installed host upgrades from CI's images.
 Runs hadolint on each Containerfile (findings uploaded to code scanning as
 SARIF), then builds each image of its matrix (`name`, `version`, `platforms`)
 and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version>`, one
-manifest list for all platforms,
+manifest list for all platforms (plus `<version>-x86-64-v2` with
+`x86_64_v2_tag`, see `images/almalinux`),
 authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.
 
@@ -227,6 +234,12 @@ Container images only: disk images need `config.toml`.
   slightly between platforms.
 - **Pushed images are signed**, then pulled back with the image's own
   `policy.json` to check the signature. See "Signing".
+- **`<version>-x86-64-v2` is copied with `skopeo copy`, by digest**,
+  from the `linux/amd64/v2` entry of the list just pushed: it fails if
+  that entry is missing, where choosing by platform
+  (`--override-variant v2`) would fall back to `linux/amd64`, the v3
+  build. It is signed again: without `signedIdentity`, `policy.json`
+  only accepts a signature naming the exact tag being pulled.
 
 ## Signing
 
@@ -282,11 +295,6 @@ It only supports macOS on Apple Silicon, and says so when run anywhere else.
   on an arm Mac needs `podman build --platform linux/amd64` and a target
   architecture option for image-builder. This is experimental and
   emulated, so slow.
-- **almalinux on x86-64-v2 CPUs (e.g. Intel Atom C2338):** install with
-  `podman run --platform linux/amd64/v2 ...`. `bootc upgrade` then
-  fetches `linux/amd64`, the x86-64-v3 build, and the new deployment
-  won't boot (pick the previous one in GRUB, or `bootc rollback`).
-  Upgrades on such hosts need a tag that points at the v2 build only.
 
 ## References
 
