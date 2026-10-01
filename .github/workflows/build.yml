@@ -85,8 +85,6 @@ jobs:
         # get v2 when they ask for it (--platform linux/amd64/v2):
         # containers/image doesn't detect x86-64 levels. See ARCHITECTURE.md.
         # fedora: its base has no x86-64 level variants (x86-64 baseline).
-        # x86_64_v2_tag: also push the linux/amd64/v2 image alone as
-        # <version>-x86-64-v2, the tag x86-64-v2 hosts install and upgrade from.
         include:
           - name: fedora
             version: "44"
@@ -94,7 +92,6 @@ jobs:
           - name: almalinux
             version: "10.2"
             platforms: linux/amd64,linux/amd64/v2,linux/arm64
-            x86_64_v2_tag: true
     env:
       NAME: ${{ matrix.name }}
       VERSION: ${{ matrix.version }}
@@ -148,14 +145,3 @@ jobs:
           for platform in "${platforms[@]}"; do
             podman pull --platform "${platform}" --signature-policy "images/${NAME}/sysroot/etc/containers/policy.json" "${TAG}"
           done
-      # <version>-x86-64-v2: a single image, not a list, so podman and bootc
-      # have no platform to choose and always get v2. Copied by digest from
-      # the list just pushed: fails if it has no linux/amd64/v2 entry,
-      # instead of falling back to linux/amd64. Signed again because
-      # policy.json only accepts a signature naming the tag being pulled.
-      # Login and key come from the push step.
-      - if: github.event_name != 'pull_request' && matrix.x86_64_v2_tag
-        run: |-
-          digest="$(skopeo inspect --raw "docker://${TAG}" | jq -er '.manifests[] | select(.platform.architecture == "amd64" and .platform.variant == "v2") | .digest')"
-          skopeo copy --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null "docker://${TAG%:*}@${digest}" "docker://${TAG}-x86-64-v2"
-          podman pull --signature-policy "images/${NAME}/sysroot/etc/containers/policy.json" "${TAG}-x86-64-v2"
