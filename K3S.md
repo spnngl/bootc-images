@@ -64,8 +64,11 @@ mode, kube-proxy kept (`kubeProxyReplacement=false`). The pod CIDR is k3s' own, 
 Of k3s' packaged manifests, the server only deploys the cloud controller,
 local-storage and its RBAC rolebindings. Deploy the others yourself:
 
-- DNS (CoreDNS): its Service must use `10.43.0.10`, the cluster DNS the
-  kubelets point pods to (k3s' `--cluster-dns`), domain `cluster.local`.
+- DNS: CoreDNS, its Service on `10.43.0.10` (k3s' `--cluster-dns`),
+  domain `cluster.local`, and NodeLocal DNSCache on every node, listening
+  on `169.254.25.10`: the kubelets point pods to it, not to CoreDNS
+  (`images/fedora/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-cluster-dns.conf`).
+  Until it runs, pods have no DNS.
 - metrics-server, an ingress controller, runtime classes: as needed.
 - LoadBalancer Services: k3s' ServiceLB is disabled, use e.g. Cilium's
   LB IPAM.

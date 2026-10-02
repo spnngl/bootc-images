@@ -48,7 +48,6 @@ firewall-offline-cmd --check-config
 
 # Create k3s folders
 mkdir -p /etc/rancher/k3s/config.yaml.d
-mkdir -p /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/
 
 # Install k3s with the install script of the same release, which checks the
 # binary's sha256. Run twice, once per role, with the same binary:
