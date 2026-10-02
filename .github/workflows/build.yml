@@ -83,11 +83,17 @@ jobs:
         #
         # Optional keys, for multi-stage Containerfiles: target, the stage to
         # build (default: the last one), and suffix, appended to the tag.
-        # almalinux: dockerenv is <version>, kubeenv <version>-k3s.
+        # fedora and almalinux: dockerenv is <version>, kubeenv <version>-k3s.
         include:
           - name: fedora
             version: "44"
             platforms: linux/amd64,linux/arm64
+            target: dockerenv
+          - name: fedora
+            version: "44"
+            platforms: linux/amd64,linux/arm64
+            target: kubeenv
+            suffix: -k3s
           - name: almalinux
             version: "9.8"
             platforms: linux/amd64,linux/arm64

@@ -37,7 +37,29 @@ There are two stages:
 
 ### `images/fedora`
 
-A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
+An image derived from `quay.io/fedora/fedora-bootc:44`, with either
+Docker or k3s. Stages:
+
+- `base`: the host system, shared by the two images below. Not an image
+  on its own.
+- `dockerenv` (`FROM base`, the last stage, so the default target and
+  what `build.sh` builds): adds Docker. Tag `<name>:<version>`.
+- `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
+  Docker. Tag `<name>:<version>-k3s`. Its container runtime is the
+  containerd embedded in k3s. The k3s release is pinned
+  (`ARG K3S_VERSION`), and so is the install script, taken from the same
+  tag; the service is enabled. The CNI is Cilium, installed on the
+  cluster: k3s runs without flannel, kube-proxy, network policy
+  controller or traefik. Port 6443 (k3s supervisor and API server) is
+  open on the `public` zone. The
+  [k3s requirements](https://docs.k3s.io/installation/requirements?os=rhel)
+  also ask firewalld to trust the pod and service CIDRs. Cilium sets
+  them, so the whole of `10.0.0.0/8` is a source of the `trusted` zone:
+  `public` would reject pod traffic to the host. Any `10.0.0.0/8`
+  source, on any interface, skips the `public` zone. Node to node
+  traffic uses Cilium's WireGuard tunnel, between node IPs.
+
+Both images end with `bootc container lint`. The host system:
 
 - Installs `tmux`, `htop` and what the configuration below needs, then
   empties `/var/log`, `/var/cache`, `/var/lib/dnf`, `/tmp` and `/run/dnf*`.
@@ -61,36 +83,17 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
   `cockpit` from it (sshd only listens on 42022, and cockpit isn't
   installed). See "Firewalld" below for the `firewall-offline-cmd` option
   this needs.
-- Ends with `bootc container lint`.
 
 ### `images/almalinux`
 
 An image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
 close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
 plus country geo-blocking and threat-feed blocklists on the public
-zone, and either Docker or k3s. Stages:
-
-- `base`: the host system, shared by the two images below. Not an image
-  on its own.
-- `dockerenv` (`FROM base`, the last stage, so the default target and
-  what `build.sh` builds): adds Docker. Tag `almalinux:<version>`.
-- `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
-  Docker. Tag `almalinux:<version>-k3s`. Its container runtime is the containerd
-  embedded in k3s. The k3s release is pinned (`ARG K3S_VERSION`), and so
-  is the install script, taken from the same tag; the service is
-  enabled. The CNI is Cilium, installed on the cluster: k3s runs without
-  flannel, kube-proxy, network policy controller or traefik. Port 6443
-  (k3s supervisor and API server) is open on the `public` zone. The
-  [k3s requirements](https://docs.k3s.io/installation/requirements?os=rhel)
-  also ask firewalld to trust the pod and service CIDRs. Cilium sets
-  them, so the whole of `10.0.0.0/8` is a source of the `trusted` zone:
-  in `public`, the `geoblock` policy would drop them as private. Any
-  `10.0.0.0/8` source, on any interface, skips the `public` zone and its
-  policies. Node to node traffic uses Cilium's WireGuard tunnel, between
-  node IPs. `kernel-modules-extra`, needed on RHEL 10, is already in the
-  base image.
-
-Both images end with `bootc container lint`.
+zone. Same stages, `dockerenv` and `kubeenv`, as `images/fedora`. In
+`kubeenv`, `10.0.0.0/8` sources also skip the `public` zone's
+geo-blocking policies, which would drop them as private.
+`kernel-modules-extra`, needed by k3s on RHEL 10, is already in the base
+image.
 
 Geo-blocking and blocklists:
 
@@ -229,8 +232,8 @@ includes the former bootc-image-builder) with:
 Images are tagged `ghcr.io/spnngl/bootc-images/<name>:<version>`,
 `<version>` being the Containerfile's `ARG BASE_VERSION` default: the
 same name CI pushes for the default target, so an installed host upgrades
-from CI's images. `build.sh` only builds the default target (for
-almalinux, `dockerenv`) and never pushes.
+from CI's images. `build.sh` only builds the default target
+(`dockerenv`) and never pushes.
 
 ## CI: `.github/workflows/build.yml`
 

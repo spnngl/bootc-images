@@ -1,12 +1,17 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Minimal derived Fedora bootc image.
+# Derived Fedora bootc image, in stages:
+#   - base: the host system (firewalld, sshd, chrony, systemd-networkd...).
+#     Not an image on its own.
+#   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix -k3s.
+#   - dockerenv (FROM base, the default target): adds Docker.
 #
-# Build command:
+# Build commands, same tags as CI (.github/workflows/build.yml):
 #   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora:44 images/
+#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora:44-k3s images/
 #
-# scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
-# boots it in QEMU.
+# scripts/build.sh does the first one (default target only) and also builds a
+# qcow2 disk image; scripts/run.sh boots it in QEMU.
 #
 # NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html
@@ -15,7 +20,10 @@
 # --build-arg (.github/workflows/build.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
 ARG BASE_VERSION=44
-FROM quay.io/fedora/fedora-bootc:${BASE_VERSION}
+
+
+# The host system, shared by dockerenv and kubeenv.
+FROM quay.io/fedora/fedora-bootc:${BASE_VERSION} AS base
 
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
@@ -30,15 +38,10 @@ RUN <<EORUN
 # Install base stuff + repos
 dnf -y install ca-certificates dnf-plugins-core dnf5-plugins glibc-langpack-en glibc-langpack-fr \
     sysstat iproute iputils procps-ng util-linux coreutils e2fsprogs mdadm lvm2 cryptsetup
-# See https://docs.docker.com/engine/install/fedora/
-dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
 
 # Install packages
 dnf -y install tree htop btrfs-progs firewalld netcat vim git nftables podman buildah systemd-networkd \
-    containers-common \
-    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-model-plugin
-dnf -y autoremove
-dnf clean all
+    containers-common
 
 # TZ
 ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
@@ -63,15 +66,94 @@ firewall-offline-cmd --zone=public --remove-service-from-zone=cockpit --remove-s
 systemctl disable NetworkManager
 systemctl mask NetworkManager
 systemctl enable sshd.service firewalld.service systemd-networkd.service \
-    docker.service containerd.service mdmonitor.service
+    mdmonitor.service
 
 # Cleanup
+dnf -y autoremove
+dnf clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
 # Copy static configuration files
 COPY --link ./fedora/sysroot/ /
 
-# Keep this as the last instruction
+
+# Kubernetes environment: k3s, without Docker. Its container runtime is the
+# containerd embedded in k3s (/run/k3s/containerd, `k3s ctr`/`ctr`).
+# The CNI is Cilium, installed on the cluster, hence no flannel, kube-proxy
+# or network policy controller.
+# Requirements: https://docs.k3s.io/installation/requirements?os=rhel
+FROM base AS kubeenv
+
+# k3s release, also the tag of its install script: bumping it reruns the
+# install. https://github.com/k3s-io/k3s/releases
+ARG K3S_VERSION=v1.36.5+k3s1
+
+# SHELL (with -o pipefail) is inherited from base: hadolint doesn't follow
+# it across stages.
+# hadolint ignore=DL4006
+RUN <<EORUN
+# Firewall
+#
+# Used ports
+# - 6443: k3s supervisor and Kubernetes API server
+#
+# k3s requires firewalld to trust its pod and service CIDRs. Cilium sets
+# them: trust all of 10.0.0.0/8, which holds them. Without it, the public
+# zone rejects pod traffic to the host. Traffic between nodes goes through
+# Cilium's WireGuard tunnel, from node IPs.
+firewall-offline-cmd --add-port=6443/tcp
+firewall-offline-cmd --zone=trusted --add-source=10.0.0.0/8
+firewall-offline-cmd --check-config
+
+# Install k3s with the install script of the same release, which checks the
+# binary's sha256. No SELinux RPM: SELinux is permissive
+# (fedora/sysroot/etc/selinux/config).
+# INSTALL_K3S_SKIP_ENABLE: the script's enable also runs
+# `systemctl daemon-reload`, which fails without a running systemd. The
+# service is enabled below instead.
+curl -sfL "https://raw.githubusercontent.com/k3s-io/k3s/${K3S_VERSION}/install.sh" \
+    | INSTALL_K3S_VERSION="${K3S_VERSION}" \
+        INSTALL_K3S_SKIP_ENABLE=true \
+        INSTALL_K3S_SKIP_SELINUX_RPM=true \
+        INSTALL_K3S_SELINUX_WARN=true \
+        INSTALL_K3S_SKIP_START=true \
+        INSTALL_K3S_EXEC="--flannel-backend=none --disable-kube-proxy --disable-network-policy --disable=traefik" \
+        sh -
+
+# Systemd services
+systemctl enable k3s.service
+
+# Cleanup
+rm -rf /var/log/* /var/cache/* /tmp/*
+EORUN
+
+# Keep this as the last instruction, on its own.
+# hadolint ignore=DL3059
+RUN bootc container lint
+
+
+# Docker environment. Last stage, so the default target: it is the plain
+# fedora:<version> image, kubeenv being fedora:<version>-k3s.
+FROM base AS dockerenv
+
+RUN <<EORUN
+# See https://docs.docker.com/engine/install/fedora/
+dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
+
+# Install docker stuff
+dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
+    docker-compose-plugin docker-model-plugin
+
+# Systemd services
+systemctl enable docker.service containerd.service
+
+# Cleanup
+dnf -y autoremove
+dnf clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
+EORUN
+
+# Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059
 RUN bootc container lint
