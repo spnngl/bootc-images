@@ -17,6 +17,13 @@
 ARG BASE_VERSION=10.2
 FROM quay.io/almalinuxorg/almalinux-bootc:${BASE_VERSION} AS base
 
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV TZ=UTC
+
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 # Build-only stage: downloads the France geo-blocking data and 10 public

@@ -97,6 +97,12 @@ jobs:
       TAG: ghcr.io/spnngl/bootc-images/${{ matrix.name }}:${{ matrix.version }}
     steps:
       - uses: actions/checkout@v7
+
+      # Reproducible builds
+      # See:https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
+      - name: Get Git commit timestamps
+        run: echo "TIMESTAMP=$(git log -1 --format=%ct)" >> $GITHUB_ENV
+
       # arm64 is built under QEMU emulation on this amd64 runner: slow, but
       # one job builds the whole manifest list. binfmt is kernel-wide, so
       # the runner's podman uses it too.
@@ -108,7 +114,9 @@ jobs:
       # builds one image per platform, in a manifest list named TAG. The
       # source label links the ghcr.io package to this repository.
       - run: >-
-          podman build --format=docker --platform "${PLATFORMS}" --manifest "${TAG}" --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
+          podman build --format=docker --platform "${PLATFORMS}" --manifest "${TAG}" --build-arg SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.TIMESTAMP }}
       # Install the files hosts get from the image, at the same paths: the
       # push only writes sigstore signatures where registries.d enables them,
       # and the check below reads the key from the path policy.json names.
