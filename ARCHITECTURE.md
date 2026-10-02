@@ -57,7 +57,21 @@ Docker or k3s. Stages:
   them, so the whole of `10.0.0.0/8` is a source of the `trusted` zone:
   `public` would reject pod traffic to the host. Any `10.0.0.0/8`
   source, on any interface, skips the `public` zone. Node to node
-  traffic uses Cilium's WireGuard tunnel, between node IPs.
+  traffic uses Cilium's WireGuard tunnel, between node IPs: 51871/udp is
+  open on `public` (not firewalld's `wireguard` service, which is
+  51820). Per the
+  [Cilium firewall rules](https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules),
+  nothing else is needed: in tunnel routing mode VXLAN/Geneve
+  (8472/6081) runs inside WireGuard, and health checks use ICMP, which
+  firewalld zones accept by default, instead of 4240/tcp.
+  Cilium's node-to-node encryption is on, but it
+  [leaves out control-plane nodes](https://docs.cilium.io/en/stable/security/network/encryption-wireguard/#node-to-node-encryption-beta),
+  which k3s servers are: server <-> agent node traffic stays outside
+  WireGuard, so 10250/tcp (kubelet, needed between all nodes by
+  metrics-server per the k3s requirements) is open on `public` too.
+  The datastore is k3s' default, SQLite through kine: one server, no
+  embedded etcd, so 2379-2380 stay closed. HA (`--cluster-init`) would
+  need them between servers.
 
 Both images end with `bootc container lint`. The host system:
 

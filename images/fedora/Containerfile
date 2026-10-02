@@ -97,12 +97,25 @@ RUN <<EORUN
 #
 # Used ports
 # - 6443: k3s supervisor and Kubernetes API server
+# - 51871/udp: Cilium WireGuard tunnel between nodes. In tunnel routing
+#   mode VXLAN/Geneve runs inside it, so 8472/6081 stay closed. Cilium's
+#   health checks use ICMP, which firewalld zones accept by default, so
+#   4240/tcp stays closed too.
+#   https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules
+# - 10250: kubelet, between all nodes (k3s requirements, for metrics-server).
+#   Cilium's node-to-node encryption doesn't cover it: it leaves out
+#   control-plane nodes, which k3s servers are, so server <-> agent node
+#   traffic doesn't go through WireGuard.
+#   https://docs.cilium.io/en/stable/security/network/encryption-wireguard/#node-to-node-encryption-beta
+#
+# 2379-2380 (embedded etcd) stay closed: the datastore is k3s' default,
+# SQLite through kine, on a single server.
 #
 # k3s requires firewalld to trust its pod and service CIDRs. Cilium sets
 # them: trust all of 10.0.0.0/8, which holds them. Without it, the public
 # zone rejects pod traffic to the host. Traffic between nodes goes through
 # Cilium's WireGuard tunnel, from node IPs.
-firewall-offline-cmd --add-port=6443/tcp
+firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=51871/udp
 firewall-offline-cmd --zone=trusted --add-source=10.0.0.0/8
 firewall-offline-cmd --check-config
 
