@@ -8,11 +8,30 @@ The `<name>:<version>-k3s` images (`kubeenv` stage, which runs
 - `k3s-agent.service`: `k3s agent`, the workers. Any number.
 
 Both are disabled in the image: each host picks its role once, by hand.
-`k3s`, `kubectl`, `crictl`, `ctr` and `k3s-killall.sh` are in `/usr/bin`,
-the units in `/usr/lib/systemd/system`: read-only and updated with the
-image. No uninstall script: switch to
+`k3s`, `kubectl` and `crictl` are in `/usr/bin`, the units in
+`/usr/lib/systemd/system`: read-only and updated with the image. No
+uninstall script: switch to
 another image (`bootc switch`), then remove k3s' state: `/etc/rancher`,
-`/var/lib/rancher`, `/var/lib/kubelet`.
+`/var/lib/rancher`, `/var/lib/kubelet`, `/var/lib/crio`, `/var/opt/cni`.
+
+The container runtime is CRI-O (`crio.service`, enabled), with crun, not
+k3s' containerd: no `ctr`, no `k3s-killall.sh`. Stopping k3s leaves the
+pods running; to stop them too:
+
+```sh
+systemctl stop k3s   # or k3s-agent
+crictl rmp --all --force
+```
+
+k3s (with its kubelet) and CRI-O run in `kube.slice`, out of
+`system.slice` (`images/k3s/sysroot/usr/lib/systemd/system/`), without
+resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
+and CRI-O each container's conmon in its pod's cgroup.
+
+CRI-O pulls with the host's pull secret, `/etc/ostree/auth.json`, and its
+own signature policy, `/etc/crio/policy.json` (accepts anything), not
+`/etc/containers/policy.json`. Its default capabilities have no
+`NET_RAW`: `ping` fails in pods that don't add it.
 
 ## Control-plane
 
@@ -54,12 +73,18 @@ cilium install \
     --set encryption.enabled=true \
     --set encryption.type=wireguard \
     --set encryption.nodeEncryption=true \
-    --set ipam.operator.clusterPoolIPv4PodCIDRList=10.42.0.0/16
+    --set ipam.operator.clusterPoolIPv4PodCIDRList=10.42.0.0/16 \
+    --set cni.binPath=/var/opt/cni/bin
 ```
 
 The image's firewall expects these, and Cilium's default tunnel routing
 mode. The pod CIDR is k3s' own, rather than Cilium's default
 `10.0.0.0/8`, which holds k3s' service CIDR (`10.43.0.0/16`).
+`cni.binPath`: Cilium's default, `/opt/cni/bin`, is read-only on bootc;
+CRI-O looks for CNI plugins in `/var/opt/cni/bin`
+(`images/k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf`). The CNI
+configuration stays in both defaults, `/etc/cni/net.d`, and CRI-O picks
+it up without a restart.
 
 ## Add-ons
 

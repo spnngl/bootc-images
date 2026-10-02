@@ -1,3 +1,0 @@
-# XXX /opt is immutable with bootc, using the /var/opt instead
-[plugins."io.containerd.grpc.v1.cri".cni]
-  bin_dir = "/var/opt/cni/bin"

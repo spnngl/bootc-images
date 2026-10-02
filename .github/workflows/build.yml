@@ -117,6 +117,9 @@ jobs:
             target: kubeenv
             suffix: -k3s
     env:
+      # kubeenv's k3s and CRI-O release: the Containerfiles' ARG
+      # KUBERNETES_VERSION, keep their default in sync.
+      KUBERNETES_VERSION: 1.36.5
       NAME: ${{ matrix.name }}
       VERSION: ${{ matrix.version }}
       PLATFORMS: ${{ matrix.platforms }}
@@ -142,7 +145,7 @@ jobs:
       # source label links the ghcr.io package to this repository.
       # --target only when the matrix sets one.
       - run: >-
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "${PLATFORMS}" --manifest "${TAG}" --build-arg SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
+          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "${PLATFORMS}" --manifest "${TAG}" --build-arg SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" --build-arg "KUBERNETES_VERSION=${KUBERNETES_VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
         env:
           SOURCE_DATE_EPOCH: ${{ env.TIMESTAMP }}
       # Install the files hosts get from the image, at the same paths: the

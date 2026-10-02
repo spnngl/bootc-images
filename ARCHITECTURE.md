@@ -23,7 +23,9 @@ There are two stages:
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
-│   ├── k3s/install.sh          # k3s install of every kubeenv stage (not an image)
+│   ├── k3s/                    # shared by every kubeenv stage (not an image)
+│   │   ├── install.sh          # k3s and CRI-O install
+│   │   └── sysroot/...         # CRI-O configuration, kube.slice
 │   └── <name>/                 # one folder per image
 │       ├── Containerfile
 │       └── sysroot/...         # files copied as is into the image root
@@ -51,9 +53,13 @@ Docker or k3s. Stages:
   same `images/k3s/install.sh`, bind-mounted rather than copied (buildah
   still keys its cache on the script's content). k3s is pinned there
   (`INSTALL_K3S_VERSION`), in `/usr`, with a unit per role, both
-  disabled: each host picks its role by hand. Cilium is the CNI. Setup
-  and firewall: [K3S.md](K3S.md); the reasons are in the script, next to
-  each step.
+  disabled: each host picks its role by hand. The Kubernetes release is
+  the stage's `ARG KUBERNETES_VERSION`, set by CI like `BASE_VERSION`.
+  The container runtime is CRI-O (same minor release, with crun),
+  configured by `images/k3s/sysroot/`, copied after the script, which
+  also puts k3s and CRI-O in `kube.slice`, out of `system.slice`. Cilium
+  is the CNI. Setup and firewall: [K3S.md](K3S.md); the reasons are in
+  the script, next to each step.
 
 Both images end with `bootc container lint`. The host system:
 

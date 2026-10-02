@@ -4,19 +4,48 @@
 # from a bind mount of this folder; never copied into the image. See K3S.md.
 #
 # The CNI is Cilium, installed on the cluster, hence no flannel, kube-proxy
-# or network policy controller. k3s' container runtime is its embedded
-# containerd (/run/k3s/containerd, `k3s ctr`/`ctr`).
+# or network policy controller. The container runtime is CRI-O with crun
+# (/run/crio/crio.sock, `crictl`), not k3s' embedded containerd, which k3s
+# doesn't start when given a runtime endpoint. Its config:
+# k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf.
 # Requirements: https://docs.k3s.io/installation/requirements?os=rhel
 # (kernel-modules-extra, needed on RHEL 10, is already in the AlmaLinux base
 # image).
 set -xeuo pipefail
 
+# Kubernetes release (<major>.<minor>.<patch>), from the Containerfiles'
+# ARG KUBERNETES_VERSION (CI passes it, .github/workflows/build.yml).
 # k3s release, also the tag of its install script.
 # https://github.com/k3s-io/k3s/releases
 # Named after the install script's variable, which reads it from the
 # environment: a K3S_* name would end up in the units' .env files, where
 # the script copies every K3S_* variable.
-export INSTALL_K3S_VERSION=v1.36.5+k3s1
+export INSTALL_K3S_VERSION="v${KUBERNETES_VERSION:?}+k3s1"
+
+# CRI-O, from its own repository: one per minor release, which must be
+# Kubernetes' minor. The patch release follows the repository.
+# https://github.com/cri-o/packaging#usage
+# --repofrompath: the repository is only used here, no .repo file is left
+# in the image.
+# No weak dependencies: the package recommends kubernetes-cni (CNI plugins
+# in /usr/libexec/cni), unused: CRI-O brings pods' loopback up itself and
+# Cilium installs its own plugin. container-selinux, the other one, is
+# already in the base images.
+# The package's runtime is crun, its own copy (/usr/libexec/crio/crun,
+# /etc/crio/crio.conf.d/10-crio.conf).
+crio_repo="https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v${KUBERNETES_VERSION%.*}/rpm/"
+dnf -y install --setopt=install_weak_deps=False \
+    --repofrompath=cri-o,"${crio_repo}" \
+    --setopt=cri-o.gpgcheck=1 --setopt=cri-o.gpgkey="${crio_repo}repodata/repomd.xml.key" \
+    cri-o
+# Enabled, unlike k3s: k3s waits for its socket but doesn't start it.
+systemctl enable crio.service
+
+# The package's registries.conf.d/crio.conf sorts after
+# fedora/sysroot/etc/containers/registries.conf.d/99-myregistries.conf and
+# replaces its unqualified-search-registries with docker.io only, for
+# podman too. Fail if the package no longer ships it.
+rm /etc/containers/registries.conf.d/crio.conf
 
 # Firewall
 #
@@ -45,9 +74,6 @@ firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=51871/u
 firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 --add-source=10.43.0.0/16
 firewall-offline-cmd --check-config
 
-# Create k3s folders
-mkdir -p /etc/rancher/k3s/config.yaml.d
-
 # Install k3s with the install script of the same release, which checks the
 # binary's sha256. Run twice, once per role, with the same binary:
 # k3s.service runs `k3s server` (control-plane), k3s-agent.service
@@ -72,23 +98,26 @@ mkdir -p /etc/rancher/k3s/config.yaml.d
 curl -sfLo /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/${INSTALL_K3S_VERSION}/install.sh"
 export INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_SELINUX_RPM=true \
     INSTALL_K3S_BIN_DIR=/usr/bin INSTALL_K3S_SYSTEMD_DIR=/usr/lib/systemd/system
-INSTALL_K3S_EXEC="server --flannel-backend=none --disable-kube-proxy --disable-network-policy \
+#
+# --container-runtime-endpoint, CRI-O, on both roles: in the units rather
+# than in a /etc/rancher/k3s/config.yaml.d drop-in, so that it is updated
+# with the image.
+cri=--container-runtime-endpoint=unix:///run/crio/crio.sock
+INSTALL_K3S_EXEC="server ${cri} --flannel-backend=none --disable-kube-proxy --disable-network-policy \
     --disable=coredns --disable=metrics-server --disable=runtimes --disable=servicelb --disable=traefik" \
     sh /tmp/k3s-install.sh
 # The agent's server URL and token are machine-local, in
 # /etc/rancher/k3s/config.yaml.
 # See: https://docs.k3s.io/installation/configuration
-INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent" sh /tmp/k3s-install.sh
+INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent ${cri}" sh /tmp/k3s-install.sh
 
 # The uninstall scripts can't work: they delete k3s' data and config, then
 # fail to remove the binaries from the read-only /usr. Uninstalling is
 # switching to another image (bootc switch).
-rm /usr/bin/k3s-uninstall.sh /usr/bin/k3s-agent-uninstall.sh
-
-# k3s-killall.sh only stops the units of /etc/systemd/system: point it to
-# theirs. Fail if the script changed.
-sed -i 's|/etc/systemd/system/k3s\*\.service|/usr/lib/systemd/system/k3s*.service|' /usr/bin/k3s-killall.sh
-grep -q '^for service in /usr/lib/systemd/system/k3s\*\.service; do$' /usr/bin/k3s-killall.sh
+# k3s-killall.sh is for k3s' containerd: it kills its shims, then unmounts
+# the pods' volumes and network namespaces, while CRI-O's containers still
+# run. CRI-O's pods are stopped with crictl (K3S.md).
+rm /usr/bin/k3s-uninstall.sh /usr/bin/k3s-agent-uninstall.sh /usr/bin/k3s-killall.sh
 
 # The script ends ExecStart with a dangling line continuation (` \` then a
 # blank line): drop it, so that nothing added after the blank line joins
@@ -102,4 +131,7 @@ for unit in /usr/lib/systemd/system/k3s.service /usr/lib/systemd/system/k3s-agen
 done
 
 # Cleanup
-rm -rf /var/log/* /var/cache/* /tmp/*
+dnf -y autoremove
+dnf clean all
+# /var/lib/crio: from the package, CRI-O creates it at startup.
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /var/lib/crio /tmp/* /run/dnf*

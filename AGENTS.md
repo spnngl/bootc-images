@@ -28,7 +28,8 @@ Check the source rather than blog posts or memory:
   `COPY`/`ADD` another image's files, e.g. `COPY ./fedora/sysroot/ /`.
   One `.containerignore` at `images/` covers every image; don't add a
   per-folder copy. `images/k3s/` is not an image: it holds the k3s
-  install every `kubeenv` stage runs.
+  install every `kubeenv` stage runs, and its `sysroot/`, which every
+  `kubeenv` stage copies.
 - Put files in `images/<name>/sysroot/`, at the path they get in the
   image (for example `images/<name>/sysroot/usr/lib/...`), copied with
   `COPY --link ./<name>/sysroot/ /`. Don't write files inline from `RUN`.

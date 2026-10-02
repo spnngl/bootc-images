@@ -174,8 +174,16 @@ EORUN
 # images/k3s/install.sh, shared by every image; setup in K3S.md.
 FROM base AS kubeenv
 
+# Kubernetes release of k3s and CRI-O. CI sets it with --build-arg
+# (.github/workflows/build.yml); keep this default in sync.
+ARG KUBERNETES_VERSION=1.36.5
+
 # Bind-mounted, not copied: the script stays out of the image.
-RUN --mount=type=bind,source=k3s,target=/k3s bash /k3s/install.sh
+RUN --mount=type=bind,source=k3s,target=/k3s \
+    bash /k3s/install.sh
+
+# CRI-O configuration, after the install: changing it doesn't rerun it.
+COPY --link ./k3s/sysroot/ /
 
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059
