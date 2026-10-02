@@ -32,8 +32,5 @@ auth.json
 id_*
 !id_*.pub
 
-# Python bytecode cache (e.g. running images/almalinux's tests locally)
-__pycache__/
-
 # macOS
 .DS_Store

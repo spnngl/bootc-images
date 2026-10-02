@@ -67,32 +67,42 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
 
 A minimal image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
 close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
-plus France-only geo-blocking and threat-feed blocklists on the public
-zone. See `PLAN.geoblock.md` for the full design, the risks and the
-verification still to do; summary:
+plus country geo-blocking and threat-feed blocklists on the public
+zone:
 
 - Two firewalld policies sit on the `public` zone: `geoblock`
-  (priority -10000) drops everything except French and
-  private/link-local sources (the static, committed ipsets
-  `geoblock-bogons-v{4,6}`); `blocklist` (priority -9000) then drops
-  sources listed by 10 public threat feeds. Both `target=CONTINUE`, so
-  traffic that isn't dropped still goes through the existing `public`
-  zone rules unchanged.
-- The France and blocklist data is baked in at build time, not fetched at
-  runtime. A build-only stage, `geoblock`, downloads the ipdeny lists and
-  the feeds with `ADD`, then `images/almalinux/geoblock_ipsets.py` turns
-  them into firewalld ipsets. Only feed entries that overlap a French
-  network are kept: the `blocklist` policy never sees non-French traffic,
-  so the rest can never match. Nothing from that stage reaches the final
-  image except the generated ipsets and the raw feed files
-  (`/usr/share/geoblock`, kept so a blocked IP can be traced to its feed).
+  (priority -10000) drops private/link-local sources (the static,
+  committed ipset `geoblock-bogons`) and sources in a blocked
+  country (Afghanistan, Azerbaijan, Bangladesh, Brazil, China, Iran,
+  Iraq, North Korea, Pakistan, Russia, Turkey: the list is the `ADD`s of
+  the Containerfile); `blocklist` (priority -9000) then drops sources
+  listed by 10 public threat feeds. Both `target=CONTINUE`, so traffic
+  that isn't dropped still goes through the existing `public` zone rules
+  unchanged.
+- IPv4 only, like the rest of both images: IPv6 is disabled by
+  `images/fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf`. IPv6
+  entries in the threat feeds are skipped.
+- The country and blocklist data is baked in at build time, not fetched
+  at runtime. A build-only stage, `geoblock`, downloads the ipdeny lists
+  and the feeds with `ADD`, then `images/almalinux/geoblock.nu` turns
+  them into firewalld ipsets. The stage is the `ghcr.io/nushell/nushell`
+  image with nushell as its `SHELL`: its `RUN` is nushell code.
+  Feed entries inside a blocked country are left out: the `blocklist`
+  policy never sees that traffic, so they can never match. Nothing from
+  that stage reaches the final image except the generated ipsets and the
+  raw files (`/usr/share/geoblock`, kept so a blocked IP can be traced to
+  its country or feed).
+- A blocklist fails closed: corrupt country data blocks legitimate
+  traffic, possibly the admin's. `geoblock.nu` fails the build on any
+  invalid entry, on an empty country file and on a country network that
+  overlaps a bogon range (which `0.0.0.0/0` would).
 - Refresh means rebuild: there is no timer and no cron job. `ADD` keys its
   cache on the fetched content's digest, so a build only reruns the steps
   that changed.
 - `firewall-offline-cmd --check-config` does not validate ipset entries,
-  so `geoblock_ipsets.py` is the only thing that does. Its tests
-  (`images/almalinux/test_geoblock_ipsets.py`) run before it processes
-  the real data, on every build.
+  so `geoblock.nu` is the only thing that does. Its tests
+  (`images/almalinux/test_geoblock.nu`) run before it processes the real
+  data, on every build.
 - A reverse proxy such as Caddy must run with `network_mode: host`:
   Docker publishes ports (`-p`) by DNATing before firewalld's policies
   run, so published ports bypass both. Its backends are published on
@@ -126,7 +136,7 @@ verification still to do; summary:
   (`INVALID_IPSET`); an invalid address in an ipset is silently ignored,
   and overlapping or empty ipsets are accepted. Anything that loads
   ipset entries from external data has to validate them itself; see
-  `images/almalinux/geoblock_ipsets.py` and `PLAN.geoblock.md`.
+  `images/almalinux/geoblock.nu`.
 
 ## Design decisions
 
@@ -143,7 +153,7 @@ verification still to do; summary:
 - **`COPY` rather than `ADD`.** `ADD` also downloads URLs and unpacks
   archives, which we don't want for plain files. Exception:
   `images/almalinux`'s build-only `geoblock` stage uses `ADD <url>` on
-  purpose, for its content-digest build cache (see `PLAN.geoblock.md`).
+  purpose, for its content-digest build cache.
 - **Content goes in `/usr`, `/var` stays empty.** When deployed, `/usr` is
   read-only and replaced on every update. `/etc` is merged three ways on
   update. `/var` is machine-local state, copied from the image only at the

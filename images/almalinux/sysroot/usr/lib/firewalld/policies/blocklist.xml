@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <policy target="CONTINUE" priority="-9000">
   <short>Blocklists</short>
-  <description>Drop incoming traffic from the public zone whose source is listed by a threat feed. Runs after the geoblock policy (priority -10000): it only ever sees French traffic, so the ipsets only hold entries that overlap a French network. See PLAN.geoblock.md.</description>
+  <description>Drop incoming traffic from the public zone whose source is listed by a threat feed (raw data: /usr/share/geoblock/blocklists). IPv4 only: IPv6 is disabled. Runs after the geoblock policy (priority -10000): it never sees traffic from a blocked country, so the ipset leaves out entries inside one.</description>
   <ingress-zone name="public"/>
   <egress-zone name="HOST"/>
-  <rule family="ipv4"><source ipset="blocklist-v4"/><drop/></rule>
-  <rule family="ipv6"><source ipset="blocklist-v6"/><drop/></rule>
+  <rule family="ipv4"><source ipset="blocklist"/><drop/></rule>
 </policy>

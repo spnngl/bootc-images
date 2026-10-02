@@ -14,6 +14,8 @@ Check the source rather than blog posts or memory:
 - buildah (Containerfile behaviour under podman): `github.com/containers/buildah`
 - firewalld (zone/policy/ipset behaviour): `github.com/firewalld/firewalld`
   (`doc/xml` for docs, `src/firewall/core` for behaviour)
+- nushell (`images/almalinux/geoblock.nu`): `github.com/nushell/nushell`,
+  at the tag of the `ghcr.io/nushell/nushell` image the Containerfile uses
 - Base image tags:
   <https://quay.io/repository/fedora/fedora-bootc?tab=tags>,
   <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>
