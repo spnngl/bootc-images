@@ -72,6 +72,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Build provenance attestation: OIDC token for its Sigstore
+      # certificate, and storing it on GitHub.
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -156,16 +160,34 @@ jobs:
       # The key has no passphrase: --sign-passphrase-file /dev/null gives an
       # empty one, without it podman prompts for it.
       # manifest push signs the list (what bootc checks) and every image in
-      # it (what podman checks).
-      - if: github.event_name != 'pull_request'
+      # it (what podman checks), and writes the list's digest for the
+      # attestation below.
+      # REGISTRY_AUTH_FILE: the attestation step only reads Docker's
+      # credential file, not podman's default auth.json (same format).
+      - id: push
+        if: github.event_name != 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
         run: |-
           umask 077
           printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${RUNNER_TEMP}/cosign.key"
+          export REGISTRY_AUTH_FILE="${HOME}/.docker/config.json"
           podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
-          podman manifest push --all --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null "${TAG}" "docker://${TAG}"
+          podman manifest push --all --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null --digestfile "${RUNNER_TEMP}/digest" "${TAG}" "docker://${TAG}"
+          echo "digest=$(< "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
+      # SLSA build provenance (workflow, commit, run) for the manifest list,
+      # pushed next to the image as an OCI referrer. Hosts don't read it
+      # (see ARCHITECTURE.md, "Signing"); check it with
+      # gh attestation verify oci://<tag> -R <owner>/<repo>.
+      # No storage record: it needs an organization-owned repository.
+      - if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/spnngl/bootc-images/${{ matrix.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
       # Pull every platform back with the policy.json this image ships: fails
       # if the signing key doesn't match the committed public key, which
       # would make hosts refuse every upgrade.

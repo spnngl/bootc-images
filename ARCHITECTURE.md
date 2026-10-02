@@ -289,6 +289,13 @@ a local build upgrades from CI's signed images.
   (`containers-storage` is also how image-builder installs a local build).
 - **Rotating the key:** ship the new public key alongside the old one
   (`keyPaths`), let hosts upgrade, then switch the CI secret.
+- **Build provenance, on top:** `actions/attest-build-provenance`
+  attests which workflow, commit and run built each manifest list. It is
+  a sigstore bundle behind OCI referrers, like cosign 3's, so hosts
+  don't read it: the signature above is what they check. Check it with
+  `gh attestation verify oci://ghcr.io/spnngl/bootc-images/<name>:<tag> -R spnngl/bootc-images`.
+  The action only reads Docker's credential file, so CI logs podman in
+  with `REGISTRY_AUTH_FILE=~/.docker/config.json`.
 
 ## Running: `scripts/run.sh`
 
