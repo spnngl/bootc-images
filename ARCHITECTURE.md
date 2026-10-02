@@ -30,6 +30,7 @@ There are two stages:
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
 │   └── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
 ├── config.example.toml         # template for config.toml (git-ignored)
+├── K3S.md                      # setting up k3s hosts (-k3s images)
 └── output/                     # build results (git-ignored)
 ```
 
@@ -45,37 +46,14 @@ Docker or k3s. Stages:
 - `dockerenv` (`FROM base`, the last stage, so the default target and
   what `build.sh` builds): adds Docker. Tag `<name>:<version>`.
 - `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
-  Docker. Tag `<name>:<version>-k3s`. Its container runtime is the
-  containerd embedded in k3s. The k3s release is pinned
-  (`ARG K3S_VERSION`), and so is the install script, taken from the same
-  tag; the service is enabled. The CNI is Cilium, installed on the
-  cluster: k3s runs without flannel, kube-proxy, network policy
-  controller or traefik. Port 6443 (k3s supervisor and API server) is
-  open on the `public` zone. The
-  [k3s requirements](https://docs.k3s.io/installation/requirements?os=rhel)
-  also ask firewalld to trust the pod and service CIDRs. Cilium sets
-  them, so the whole of `10.0.0.0/8` is a source of the `trusted` zone:
-  `public` would reject pod traffic to the host. Any `10.0.0.0/8`
-  source, on any interface, skips the `public` zone. Node to node
-  traffic uses Cilium's WireGuard tunnel, between node IPs: 51871/udp is
-  open on `public` (not firewalld's `wireguard` service, which is
-  51820). Per the
-  [Cilium firewall rules](https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules),
-  nothing else is needed: in tunnel routing mode VXLAN/Geneve
-  (8472/6081) runs inside WireGuard, and health checks use ICMP, which
-  firewalld zones accept by default, instead of 4240/tcp.
-  Cilium's node-to-node encryption is on, but it
-  [leaves out control-plane nodes](https://docs.cilium.io/en/stable/security/network/encryption-wireguard/#node-to-node-encryption-beta),
-  which k3s servers are: server <-> agent node traffic stays outside
-  WireGuard, so 10250/tcp (kubelet, needed between all nodes by
-  metrics-server per the k3s requirements) is open on `public` too.
-  The datastore is k3s' default, SQLite through kine: one server, no
-  embedded etcd, so 2379-2380 stay closed. HA (`--cluster-init`) would
-  need them between servers.
+  Docker. Tag `<name>:<version>-k3s`. k3s is pinned (`ARG K3S_VERSION`),
+  in `/usr`, with a unit per role, both disabled: each host picks its
+  role by hand. Cilium is the CNI. Setup and firewall: [K3S.md](K3S.md);
+  the reasons are in the Containerfile, next to each step.
 
 Both images end with `bootc container lint`. The host system:
 
-- Installs `tmux`, `htop` and what the configuration below needs, then
+- Installs `htop`, `vim`, `git` and what the configuration below needs, then
   empties `/var/log`, `/var/cache`, `/var/lib/dnf`, `/tmp` and `/run/dnf*`.
 - `usr/lib/bootc/kargs.d/10-console.toml`: serial console kernel
   arguments, x86_64 only.
@@ -103,11 +81,7 @@ Both images end with `bootc container lint`. The host system:
 An image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
 close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
 plus country geo-blocking and threat-feed blocklists on the public
-zone. Same stages, `dockerenv` and `kubeenv`, as `images/fedora`. In
-`kubeenv`, `10.0.0.0/8` sources also skip the `public` zone's
-geo-blocking policies, which would drop them as private.
-`kernel-modules-extra`, needed by k3s on RHEL 10, is already in the base
-image.
+zone. Same stages, `dockerenv` and `kubeenv`, as `images/fedora`.
 
 Geo-blocking and blocklists:
 

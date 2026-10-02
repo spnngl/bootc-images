@@ -38,7 +38,7 @@ FROM --platform=${BUILDPLATFORM} ghcr.io/nushell/nushell:0.116.0-alpine AS geobl
 # RUN below can write /out, and its output is owned by root like the rest
 # of the final image. This stage is never run as a container.
 # hadolint ignore=DL3002
-USER root
+USER 0
 # RUN takes nushell code directly. No config file: the build must not
 # depend on the image's default config.
 SHELL ["/usr/bin/nu", "--no-history", "--no-config-file", "-c"]
@@ -182,9 +182,6 @@ FROM base AS kubeenv
 # install. https://github.com/k3s-io/k3s/releases
 ARG K3S_VERSION=v1.36.5+k3s1
 
-# SHELL (with -o pipefail) is inherited from base: hadolint doesn't follow
-# it across stages.
-# hadolint ignore=DL4006
 RUN <<EORUN
 # Firewall
 #
@@ -204,31 +201,44 @@ RUN <<EORUN
 # 2379-2380 (embedded etcd) stay closed: the datastore is k3s' default,
 # SQLite through kine, on a single server.
 #
-# k3s requires firewalld to trust its pod and service CIDRs. Cilium sets
-# them: trust all of 10.0.0.0/8, which holds them. Without it, the public
-# zone's geoblock policy drops them as private (geoblock-bogons). Traffic
-# between nodes goes through Cilium's WireGuard tunnel, from node IPs.
+# k3s requires firewalld to trust its pod and service CIDRs, k3s' defaults:
+# 10.42.0.0/16 and 10.43.0.0/16. Cilium's pod CIDR is set to the same
+# (K3S.md). Without it, the public zone's geoblock policy drops them as
+# private (geoblock-bogons).
 firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=51871/udp
-firewall-offline-cmd --zone=trusted --add-source=10.0.0.0/8
+firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 --add-source=10.43.0.0/16
 firewall-offline-cmd --check-config
 
 # Install k3s with the install script of the same release, which checks the
-# binary's sha256. No SELinux RPM: SELinux is permissive
-# (fedora/sysroot/etc/selinux/config).
+# binary's sha256. Run twice, once per role, with the same binary:
+# k3s.service runs `k3s server` (control-plane), k3s-agent.service
+# `k3s agent`. The role is per host, so both stay disabled: see K3S.md.
+# No SELinux RPM: SELinux is permissive (fedora/sysroot/etc/selinux/config).
 # INSTALL_K3S_SKIP_ENABLE: the script's enable also runs
-# `systemctl daemon-reload`, which fails without a running systemd. The
-# service is enabled below instead.
-curl -sfL "https://raw.githubusercontent.com/k3s-io/k3s/${K3S_VERSION}/install.sh" \
-    | INSTALL_K3S_VERSION="${K3S_VERSION}" \
-        INSTALL_K3S_SKIP_ENABLE=true \
-        INSTALL_K3S_SKIP_SELINUX_RPM=true \
-        INSTALL_K3S_SELINUX_WARN=true \
-        INSTALL_K3S_SKIP_START=true \
-        INSTALL_K3S_EXEC="--flannel-backend=none --disable-kube-proxy --disable-network-policy --disable=traefik" \
-        sh -
-
-# Systemd services
-systemctl enable k3s.service
+# `systemctl daemon-reload`, which fails without a running systemd.
+# INSTALL_K3S_BIN_DIR: /usr/bin is read-only and updated with the image.
+# The default, /usr/local/bin, is too only if the base image keeps
+# /usr/local a directory, not a link to /var/usrlocal:
+# https://bootc.dev/bootc/bootc-filesystem.7.html#usrlocal
+# INSTALL_K3S_SYSTEMD_DIR: the units too, rather than /etc/systemd/system.
+curl -sfLo /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/${K3S_VERSION}/install.sh"
+export INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_SELINUX_RPM=true \
+    INSTALL_K3S_BIN_DIR=/usr/bin INSTALL_K3S_SYSTEMD_DIR=/usr/lib/systemd/system
+INSTALL_K3S_VERSION="${K3S_VERSION}" \
+    INSTALL_K3S_EXEC="server --flannel-backend=none --disable-kube-proxy --disable-network-policy --disable=traefik" \
+    sh /tmp/k3s-install.sh
+# The agent's server URL and token are machine-local, in
+# /etc/rancher/k3s/config.yaml.
+# See: https://docs.k3s.io/installation/configuration
+INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent" sh /tmp/k3s-install.sh
+# The uninstall scripts can't work: they delete k3s' data and config, then
+# fail to remove the binaries from the read-only /usr. Uninstalling is
+# switching to another image (bootc switch).
+rm /usr/bin/k3s-uninstall.sh /usr/bin/k3s-agent-uninstall.sh
+# k3s-killall.sh only stops the units of /etc/systemd/system: point it to
+# theirs. Fail if the script changed.
+sed -i 's|/etc/systemd/system/k3s\*\.service|/usr/lib/systemd/system/k3s*.service|' /usr/bin/k3s-killall.sh
+grep -q '^for service in /usr/lib/systemd/system/k3s\*\.service; do$' /usr/bin/k3s-killall.sh
 
 # dnf install -y cloud-init
 
