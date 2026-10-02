@@ -3,3 +3,12 @@ Name=en*
 
 [Network]
 DHCP=yes
+
+# Avoid having too much DNS servers, we already have our own...
+#
+# Fix this kind of alert:
+# ```
+#Nameserver limits were exceeded, some nameservers have been omitted, the applied nameserver line is: 1.1.1.1 8.8.8.8 9.9.9.9
+# ```
+[DHCPv4]
+UseDNS=no

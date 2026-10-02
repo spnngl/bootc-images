@@ -66,7 +66,8 @@ Both images end with `bootc container lint`. The host system:
   `bootc install to-disk` and image-builder would need a filesystem flag.
 - System configuration that bootc disk images don't accept from the
   blueprint: hostname, timezone, locale, NTP servers (chrony), DNS
-  (systemd-resolved drop-in), sshd on port 42022 (SELinux port label and firewalld port),
+  (systemd-resolved drop-in; `etc/systemd/network/wired.network` ignores
+  the DHCP servers' DNS), sshd on port 42022 (SELinux port label and firewalld port),
   enabled and masked services. `config.toml` only holds the user.
 - Registry authentication: one pull secret, `/etc/ostree/auth.json`
   (0640 root:wheel), machine-local and never in the container image. It
