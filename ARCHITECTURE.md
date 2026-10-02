@@ -65,10 +65,34 @@ A minimal image derived from `quay.io/fedora/fedora-bootc:44`:
 
 ### `images/almalinux`
 
-A minimal image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
+An image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
 close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
 plus country geo-blocking and threat-feed blocklists on the public
-zone:
+zone, and either Docker or k3s. Stages:
+
+- `base`: the host system, shared by the two images below. Not an image
+  on its own.
+- `dockerenv` (`FROM base`, the last stage, so the default target and
+  what `build.sh` builds): adds Docker. Tag `almalinux:<version>`.
+- `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
+  Docker. Tag `almalinux:<version>-k3s`. Its container runtime is the containerd
+  embedded in k3s. The k3s release is pinned (`ARG K3S_VERSION`), and so
+  is the install script, taken from the same tag; the service is
+  enabled. The CNI is Cilium, installed on the cluster: k3s runs without
+  flannel, kube-proxy, network policy controller or traefik. Port 6443
+  (k3s supervisor and API server) is open on the `public` zone. The
+  [k3s requirements](https://docs.k3s.io/installation/requirements?os=rhel)
+  also ask firewalld to trust the pod and service CIDRs. Cilium sets
+  them, so the whole of `10.0.0.0/8` is a source of the `trusted` zone:
+  in `public`, the `geoblock` policy would drop them as private. Any
+  `10.0.0.0/8` source, on any interface, skips the `public` zone and its
+  policies. Node to node traffic uses Cilium's WireGuard tunnel, between
+  node IPs. `kernel-modules-extra`, needed on RHEL 10, is already in the
+  base image.
+
+Both images end with `bootc container lint`.
+
+Geo-blocking and blocklists:
 
 - Two firewalld policies sit on the `public` zone: `geoblock`
   (priority -10000) drops private/link-local sources (the static,
@@ -204,14 +228,16 @@ includes the former bootc-image-builder) with:
 
 Images are tagged `ghcr.io/spnngl/bootc-images/<name>:<version>`,
 `<version>` being the Containerfile's `ARG BASE_VERSION` default: the
-same name CI pushes, so an installed host upgrades from CI's images.
-`build.sh` never pushes.
+same name CI pushes for the default target, so an installed host upgrades
+from CI's images. `build.sh` only builds the default target (for
+almalinux, `dockerenv`) and never pushes.
 
 ## CI: `.github/workflows/build.yml`
 
 Runs hadolint on each Containerfile (findings uploaded to code scanning as
-SARIF), then builds each image of its matrix (`name`, `version`, `platforms`)
-and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version>`, one
+SARIF), then builds each image of its matrix (`name`, `version`, `platforms`,
+and for a multi-stage Containerfile `target` and tag `suffix`)
+and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version><suffix>`, one
 manifest list for all platforms,
 authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.

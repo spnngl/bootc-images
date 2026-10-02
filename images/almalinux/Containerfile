@@ -1,30 +1,25 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Minimal derived AlmaLinux bootc image.
-#
-# Build command:
-#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/bootc-images/almalinux:10.2 images/
-#
-# scripts/build.sh does this and also builds a qcow2 disk image; scripts/run.sh
-# boots it in QEMU.
-#
-# NB: This image ships no users, passwords or SSH keys.
-# Docs: https://bootc.dev/bootc/building/guidance.html
-
 # Base image major release, also the tag of this image. CI sets it with
 # --build-arg (.github/workflows/build.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags
 ARG BASE_VERSION=10.2
-FROM quay.io/almalinuxorg/almalinux-bootc:${BASE_VERSION} AS base
 
-ARG SOURCE_DATE_EPOCH=0
-ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
-
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-ENV TZ=UTC
-
-SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+# Derived AlmaLinux bootc image, in stages:
+#   - base: the host system (firewalld with geo-blocking, sshd, chrony,
+#     systemd-networkd...). Not an image on its own.
+#   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix -k3s.
+#   - dockerenv (FROM base, the default target): adds Docker.
+#
+# Build commands, same tags as CI (.github/workflows/build.yml):
+#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/bootc-images/almalinux:10.2 images/
+#   podman build --format=docker --target kubeenv -f images/almalinux/Containerfile -t ghcr.io/spnngl/bootc-images/almalinux:10.2-k3s images/
+#
+# scripts/build.sh does the first one (default target only) and also builds a
+# qcow2 disk image; scripts/run.sh boots it in QEMU.
+#
+# NB: This image ships no users, passwords or SSH keys.
+# Docs: https://bootc.dev/bootc/building/guidance.html
 
 # Build-only stage: downloads the geo-blocking data of the blocked countries
 # and 10 public threat feeds, then turns them into firewalld ipsets under
@@ -104,20 +99,42 @@ geoblock /out/usr/share/geoblock bogons /out/usr/lib/firewalld/ipsets
 EORUN
 
 
-FROM base
+# The host system, shared by dockerenv and kubeenv.
+FROM quay.io/almalinuxorg/almalinux-bootc:${BASE_VERSION} AS base
+
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV TZ=UTC
+
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Copy static configuration files, keeping the modes of the build context
+# (0755 directories, 0644 files). No --chmod: buildah applies it to
+# directories too, and 0644 on /usr, /etc... breaks every non-root service
+# (systemd-resolved included).
+COPY --link ./fedora/sysroot/ /
+
+# Geo-blocking and blocklist ipsets built in the "geoblock" stage above.
+# This must come before the policies below: a policy that references a
+# missing ipset makes every firewall-offline-cmd call fail.
+COPY --link --from=geoblock /out/ /
+# Geo-blocking policies and the static bogon ipsets they use.
+COPY --link ./almalinux/sysroot/ /
 
 RUN <<EORUN
 # Install base stuff + repos
-dnf -y install ca-certificates dnf-plugins-core glibc-langpack-en glibc-langpack-fr epel-release \
-    sysstat iproute iputils procps-ng util-linux coreutils e2fsprogs mdadm lvm2 cryptsetup
-dnf-3 config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+dnf -y install ca-certificates dnf-plugins-core epel-release \
+    glibc-langpack-en glibc-langpack-fr
 
-# Install packages
-dnf -y install tree htop btrfs-progs firewalld netcat vim git nftables podman buildah systemd-networkd systemd-resolved \
-    containers-common \
-    docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin docker-model-plugin
-dnf -y autoremove
-dnf clean all
+# Install packages (needs epel)
+dnf -y install \
+    sysstat iproute iputils procps-ng util-linux coreutils \
+    e2fsprogs mdadm lvm2 cryptsetup tree htop btrfs-progs firewalld \
+    netcat vim git nftables podman buildah \
+    systemd-networkd systemd-resolved containers-common
 
 # TZ
 ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
@@ -137,31 +154,102 @@ grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 # TODO selinux one day
 firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
 firewall-offline-cmd --zone=public --remove-service-from-zone=cockpit --remove-service-from-zone=ssh
+firewall-offline-cmd --check-config
 
 # Systemd services
 systemctl disable NetworkManager
 systemctl mask NetworkManager
 systemctl enable sshd.service firewalld.service \
     systemd-resolved.service systemd-networkd.service \
-    docker.service containerd.service mdmonitor.service
+    mdmonitor.service
 
 # Cleanup
+dnf -y autoremove
+dnf clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
-# Copy static configuration files, keeping the modes of the build context
-# (0755 directories, 0644 files). No --chmod: buildah applies it to
-# directories too, and 0644 on /usr, /etc... breaks every non-root service
-# (systemd-resolved included).
-COPY --link ./fedora/sysroot/ /
 
-# Geo-blocking and blocklist ipsets built in the "geoblock" stage above.
-# This must come before the policies below: a policy that references a
-# missing ipset makes every firewall-offline-cmd call fail.
-COPY --link --from=geoblock /out/ /
-# Geo-blocking policies and the static bogon ipsets they use.
-COPY --link ./almalinux/sysroot/ /
-RUN firewall-offline-cmd --check-config
+# Kubernetes environment: k3s, without Docker. Its container runtime is the
+# containerd embedded in k3s (/run/k3s/containerd, `k3s ctr`/`ctr`).
+# The CNI is Cilium, installed on the cluster, hence no flannel, kube-proxy
+# or network policy controller.
+# Requirements: https://docs.k3s.io/installation/requirements?os=rhel
+# (kernel-modules-extra, needed on RHEL 10, is already in the base image).
+FROM base AS kubeenv
+
+# k3s release, also the tag of its install script: bumping it reruns the
+# install. https://github.com/k3s-io/k3s/releases
+ARG K3S_VERSION=v1.36.5+k3s1
+
+# SHELL (with -o pipefail) is inherited from base: hadolint doesn't follow
+# it across stages.
+# hadolint ignore=DL4006
+RUN <<EORUN
+# Firewall
+#
+# Used ports
+# - 6443: k3s supervisor and Kubernetes API server
+#
+# k3s requires firewalld to trust its pod and service CIDRs. Cilium sets
+# them: trust all of 10.0.0.0/8, which holds them. Without it, the public
+# zone's geoblock policy drops them as private (geoblock-bogons). Traffic
+# between nodes goes through Cilium's WireGuard tunnel, from node IPs.
+firewall-offline-cmd --add-port=6443/tcp
+firewall-offline-cmd --zone=trusted --add-source=10.0.0.0/8
+firewall-offline-cmd --check-config
+
+# Install k3s with the install script of the same release, which checks the
+# binary's sha256. No SELinux RPM: SELinux is permissive
+# (fedora/sysroot/etc/selinux/config).
+# INSTALL_K3S_SKIP_ENABLE: the script's enable also runs
+# `systemctl daemon-reload`, which fails without a running systemd. The
+# service is enabled below instead.
+curl -sfL "https://raw.githubusercontent.com/k3s-io/k3s/${K3S_VERSION}/install.sh" \
+    | INSTALL_K3S_VERSION="${K3S_VERSION}" \
+        INSTALL_K3S_SKIP_ENABLE=true \
+        INSTALL_K3S_SKIP_SELINUX_RPM=true \
+        INSTALL_K3S_SELINUX_WARN=true \
+        INSTALL_K3S_SKIP_START=true \
+        INSTALL_K3S_EXEC="--flannel-backend=none --disable-kube-proxy --disable-network-policy --disable=traefik" \
+        sh -
+
+# Systemd services
+systemctl enable k3s.service
+
+# dnf install -y cloud-init
+
+# Cleanup
+dnf -y autoremove
+dnf clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
+EORUN
+
+# Keep this as the last instruction, on its own.
+# hadolint ignore=DL3059
+RUN bootc container lint
+
+
+# Docker environment. Last stage, so the default target: it is the plain
+# almalinux:<version> image, kubeenv being almalinux:<version>-k3s.
+FROM base AS dockerenv
+
+RUN <<EORUN
+# Docker repos, have to use centos one to have everything
+dnf-3 config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# Install docker stuff
+dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
+    docker-compose-plugin docker-model-plugin
+
+# Systemd services
+systemctl enable docker.service containerd.service
+
+# Cleanup
+dnf -y autoremove
+dnf clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
+EORUN
 
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059
