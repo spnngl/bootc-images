@@ -28,7 +28,9 @@ k3s (with its kubelet) and CRI-O run in `kube.slice`, out of
 resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
 and CRI-O each container's conmon in its pod's cgroup.
 
-CRI-O pulls with the host's pull secret, `/etc/ostree/auth.json`, and its
+Short image names (`coredns/coredns`) resolve to docker.io only, as with
+containerd (`images/fedora/sysroot/etc/containers/registries.conf.d/99-myregistries.conf`):
+images from other registries need full names. CRI-O pulls with the host's pull secret, `/etc/ostree/auth.json`, and its
 own signature policy, `/etc/crio/policy.json` (accepts anything), not
 `/etc/containers/policy.json`. Its default capabilities have no
 `NET_RAW`: `ping` fails in pods that don't add it.

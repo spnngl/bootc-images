@@ -43,8 +43,8 @@ systemctl enable crio.service
 
 # The package's registries.conf.d/crio.conf sorts after
 # fedora/sysroot/etc/containers/registries.conf.d/99-myregistries.conf and
-# replaces its unqualified-search-registries with docker.io only, for
-# podman too. Fail if the package no longer ships it.
+# would override its unqualified-search-registries, for podman too: keep
+# ours the only one. Fail if the package no longer ships it.
 rm /etc/containers/registries.conf.d/crio.conf
 
 # Firewall
