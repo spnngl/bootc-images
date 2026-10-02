@@ -40,8 +40,8 @@ Then, on the control-plane, `kubectl get nodes` lists it.
 
 ## Cilium
 
-k3s runs without flannel, kube-proxy, network policy controller or
-traefik: nodes stay `NotReady` until Cilium is installed. From the
+k3s runs without flannel, kube-proxy or network policy controller: nodes
+stay `NotReady` until Cilium is installed. From the
 control-plane, with
 [cilium-cli](https://docs.cilium.io/en/stable/installation/k3s/):
 
@@ -60,6 +60,17 @@ cilium install \
 The image's firewall expects these, and Cilium's default tunnel routing
 mode. The pod CIDR is k3s' own, rather than Cilium's default
 `10.0.0.0/8`, which holds k3s' service CIDR (`10.43.0.0/16`).
+
+## Add-ons
+
+Of k3s' packaged manifests, the server only deploys the cloud controller,
+local-storage and its RBAC rolebindings. Deploy the others yourself:
+
+- DNS (CoreDNS): its Service must use `10.43.0.10`, the cluster DNS the
+  kubelets point pods to (k3s' `--cluster-dns`), domain `cluster.local`.
+- metrics-server, an ingress controller, runtime classes: as needed.
+- LoadBalancer Services: k3s' ServiceLB is disabled, use e.g. Cilium's
+  LB IPAM.
 
 ## Firewall
 

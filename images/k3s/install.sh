@@ -27,7 +27,8 @@ export INSTALL_K3S_VERSION=v1.36.5+k3s1
 #   health checks use ICMP, which firewalld zones accept by default, so
 #   4240/tcp stays closed too.
 #   https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules
-# - 10250: kubelet, between all nodes (k3s requirements, for metrics-server).
+# - 10250: kubelet, between all nodes (k3s requirements, for metrics-server,
+#   deployed separately).
 #   Cilium's node-to-node encryption doesn't cover it: it leaves out
 #   control-plane nodes, which k3s servers are, so server <-> agent node
 #   traffic doesn't go through WireGuard.
@@ -61,10 +62,19 @@ mkdir -p /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/
 # /usr/local a directory, not a link to /var/usrlocal:
 # https://bootc.dev/bootc/bootc-filesystem.7.html#usrlocal
 # INSTALL_K3S_SYSTEMD_DIR: the units too, rather than /etc/systemd/system.
+#
+# Of k3s' packaged manifests (/var/lib/rancher/k3s/server/manifests), only
+# ccm, local-storage and rolebindings are deployed; rolebindings can't be
+# disabled, ccm has its own flag. CoreDNS, metrics-server, traefik and the
+# runtime classes are deployed separately (K3S.md). --disable also deletes
+# them from a server that already deployed them.
+# servicelb, k3s' LoadBalancer controller (in the cloud controller, no
+# manifest), is disabled too: LoadBalancer Services are up to the cluster.
 curl -sfLo /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/${INSTALL_K3S_VERSION}/install.sh"
 export INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_SELINUX_RPM=true \
     INSTALL_K3S_BIN_DIR=/usr/bin INSTALL_K3S_SYSTEMD_DIR=/usr/lib/systemd/system
-INSTALL_K3S_EXEC="server --flannel-backend=none --disable-kube-proxy --disable-network-policy --disable=traefik" \
+INSTALL_K3S_EXEC="server --flannel-backend=none --disable-kube-proxy --disable-network-policy \
+    --disable=coredns --disable=metrics-server --disable=runtimes --disable=servicelb --disable=traefik" \
     sh /tmp/k3s-install.sh
 # The agent's server URL and token are machine-local, in
 # /etc/rancher/k3s/config.yaml.
