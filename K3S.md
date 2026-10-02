@@ -40,25 +40,23 @@ Then, on the control-plane, `kubectl get nodes` lists it.
 
 ## Cilium
 
-k3s runs without flannel, kube-proxy or network policy controller: nodes
-stay `NotReady` until Cilium is installed. From the
+k3s runs without flannel or network policy controller, with its
+kube-proxy (nftables mode, on every node): nodes stay `NotReady` until
+Cilium is installed. From the
 control-plane, with
 [cilium-cli](https://docs.cilium.io/en/stable/installation/k3s/):
 
 ```sh
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 cilium install \
-    --set kubeProxyReplacement=true \
-    --set k8sServiceHost=<control-plane IP> \
-    --set k8sServicePort=6443 \
     --set encryption.enabled=true \
     --set encryption.type=wireguard \
     --set encryption.nodeEncryption=true \
     --set ipam.operator.clusterPoolIPv4PodCIDRList=10.42.0.0/16
 ```
 
-The image's firewall expects these, and Cilium's default tunnel routing
-mode. The pod CIDR is k3s' own, rather than Cilium's default
+The image's firewall expects these, and Cilium's defaults: tunnel routing
+mode, kube-proxy kept (`kubeProxyReplacement=false`). The pod CIDR is k3s' own, rather than Cilium's default
 `10.0.0.0/8`, which holds k3s' service CIDR (`10.43.0.0/16`).
 
 ## Add-ons

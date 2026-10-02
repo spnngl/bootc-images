@@ -3,8 +3,9 @@
 # both roles (k3s server, k3s agent), all disabled. Run by the Containerfiles
 # from a bind mount of this folder; never copied into the image. See K3S.md.
 #
-# The CNI is Cilium, installed on the cluster, hence no flannel, kube-proxy
-# or network policy controller. k3s' container runtime is its embedded
+# The CNI is Cilium, installed on the cluster, hence no flannel or network
+# policy controller. k3s' kube-proxy stays: Cilium doesn't replace it
+# (K3S.md). k3s' container runtime is its embedded
 # containerd (/run/k3s/containerd, `k3s ctr`/`ctr`).
 # Requirements: https://docs.k3s.io/installation/requirements?os=rhel
 # (kernel-modules-extra, needed on RHEL 10, is already in the AlmaLinux base
@@ -70,16 +71,24 @@ mkdir -p /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/
 # them from a server that already deployed them.
 # servicelb, k3s' LoadBalancer controller (in the cloud controller, no
 # manifest), is disabled too: LoadBalancer Services are up to the cluster.
+#
+# kube-proxy runs on every node, server and agents: both get
+# --kube-proxy-arg=proxy-mode=nftables, over k3s' default (iptables). The
+# host's firewall (firewalld) is nftables too, so kube-proxy writes its
+# rules there directly, without the iptables-nft translation.
+# https://kubernetes.io/docs/reference/networking/virtual-ips/#proxy-mode-nftables
+kube_proxy_args="--kube-proxy-arg=proxy-mode=nftables"
 curl -sfLo /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/${INSTALL_K3S_VERSION}/install.sh"
 export INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_SELINUX_RPM=true \
     INSTALL_K3S_BIN_DIR=/usr/bin INSTALL_K3S_SYSTEMD_DIR=/usr/lib/systemd/system
-INSTALL_K3S_EXEC="server --flannel-backend=none --disable-kube-proxy --disable-network-policy \
-    --disable=coredns --disable=metrics-server --disable=runtimes --disable=servicelb --disable=traefik" \
+INSTALL_K3S_EXEC="server --flannel-backend=none --disable-network-policy \
+    --disable=coredns --disable=metrics-server --disable=runtimes --disable=servicelb --disable=traefik \
+    ${kube_proxy_args}" \
     sh /tmp/k3s-install.sh
 # The agent's server URL and token are machine-local, in
 # /etc/rancher/k3s/config.yaml.
 # See: https://docs.k3s.io/installation/configuration
-INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent" sh /tmp/k3s-install.sh
+INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent ${kube_proxy_args}" sh /tmp/k3s-install.sh
 
 # The uninstall scripts can't work: they delete k3s' data and config, then
 # fail to remove the binaries from the read-only /usr. Uninstalling is
