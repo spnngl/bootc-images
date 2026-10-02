@@ -23,6 +23,7 @@ There are two stages:
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
+│   ├── k3s/install.sh          # k3s install of every kubeenv stage (not an image)
 │   └── <name>/                 # one folder per image
 │       ├── Containerfile
 │       └── sysroot/...         # files copied as is into the image root
@@ -46,10 +47,13 @@ Docker or k3s. Stages:
 - `dockerenv` (`FROM base`, the last stage, so the default target and
   what `build.sh` builds): adds Docker. Tag `<name>:<version>`.
 - `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
-  Docker. Tag `<name>:<version>-k3s`. k3s is pinned (`ARG K3S_VERSION`),
-  in `/usr`, with a unit per role, both disabled: each host picks its
-  role by hand. Cilium is the CNI. Setup and firewall: [K3S.md](K3S.md);
-  the reasons are in the Containerfile, next to each step.
+  Docker. Tag `<name>:<version>-k3s`. Every image's `kubeenv` runs the
+  same `images/k3s/install.sh`, bind-mounted rather than copied (buildah
+  still keys its cache on the script's content). k3s is pinned there
+  (`INSTALL_K3S_VERSION`), in `/usr`, with a unit per role, both
+  disabled: each host picks its role by hand. Cilium is the CNI. Setup
+  and firewall: [K3S.md](K3S.md); the reasons are in the script, next to
+  each step.
 
 Both images end with `bootc container lint`. The host system:
 

@@ -1,7 +1,7 @@
 # k3s
 
-The `<name>:<version>-k3s` images (`kubeenv` stage) ship k3s for both
-roles, with the same binary:
+The `<name>:<version>-k3s` images (`kubeenv` stage, which runs
+`images/k3s/install.sh`) ship k3s for both roles, with the same binary:
 
 - `k3s.service`: `k3s server`, the control-plane. One per cluster: the
   datastore is k3s' default, SQLite.
@@ -28,7 +28,6 @@ cat /var/lib/rancher/k3s/server/node-token   # the agents' token
 The server URL and the token are machine-local, never in the image:
 
 ```sh
-mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/config.yaml <<EOF
 server: https://<control-plane IP>:6443
 token: <node-token>
@@ -64,7 +63,7 @@ mode. The pod CIDR is k3s' own, rather than Cilium's default
 
 ## Firewall
 
-Open on the `public` zone, see the `kubeenv` stage for why:
+Open on the `public` zone, see `images/k3s/install.sh` for why:
 
 | Port      | For                                            |
 |-----------|------------------------------------------------|
