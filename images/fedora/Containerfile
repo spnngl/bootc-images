@@ -115,11 +115,15 @@ firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=51871/u
 firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 --add-source=10.43.0.0/16
 firewall-offline-cmd --check-config
 
+# Create k3s folders
+mkdir -p /etc/rancher/k3s/config.yaml.d
+
 # Install k3s with the install script of the same release, which checks the
 # binary's sha256. Run twice, once per role, with the same binary:
 # k3s.service runs `k3s server` (control-plane), k3s-agent.service
 # `k3s agent`. The role is per host, so both stay disabled: see K3S.md.
 # No SELinux RPM: SELinux is permissive (fedora/sysroot/etc/selinux/config).
+#
 # INSTALL_K3S_SKIP_ENABLE: the script's enable also runs
 # `systemctl daemon-reload`, which fails without a running systemd.
 # INSTALL_K3S_BIN_DIR: /usr/bin is read-only and updated with the image.
