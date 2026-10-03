@@ -237,10 +237,11 @@ from CI's images. `build.sh` only builds the default target
 ## CI: `.github/workflows/build.yml`
 
 Runs hadolint on each Containerfile (findings uploaded to code scanning as
-SARIF), then builds each image of its matrix (`name`, `version`, `platforms`,
-and for a multi-stage Containerfile `target` and tag `suffix`)
-and pushes it to `ghcr.io/spnngl/bootc-images/<name>:<version><suffix>`, one
-manifest list for all platforms,
+SARIF), then builds each image of its matrix (`name`, `version`,
+and for a multi-stage Containerfile `target` and tag `suffix`) for every
+platform, and pushes it to
+`ghcr.io/spnngl/bootc-images/<name>:<version><suffix>`, one manifest list
+for all platforms,
 authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.
 
@@ -249,20 +250,27 @@ Container images only: disk images need `config.toml`.
   manual dispatch all push. Pull requests only lint and build.
 - **The matrix is the list of images**, each with its base version,
   passed as `--build-arg BASE_VERSION`. A new image or a version bump
-  goes there too.
-- **Jobs run on `ubuntu-26.04`, not `ubuntu-latest`.** It ships Podman
+  goes there too. The `push` job reuses it through a YAML anchor.
+- **Jobs run on `ubuntu-26.04` and `ubuntu-26.04-arm`, not
+  `ubuntu-latest`.** They ship Podman
   5.7 / Buildah 1.42; `ubuntu-latest` (24.04) has buildah 1.33, and the
   Containerfiles use `COPY --link` (buildah 1.41+). Builds use the
   runner's rootless podman, where `build.sh` uses rootful podman.
 - **Same `podman build` flags as `build.sh`** (`--format=docker`, context
   `images/`), plus an `org.opencontainers.image.source` label that links
-  the ghcr.io package to the repository, and `--platform <list>
-  --manifest <tag>` for the manifest list.
-- **Every platform on one amd64 runner:** arm64 runs under QEMU
-  (`docker/setup-qemu-action`), which is slow but needs no second job to
-  merge the lists. Platforms build one after the other, and each
-  downloads almalinux's geo-blocking data itself, so the data can differ
-  slightly between platforms.
+  the ghcr.io package to the repository, and `--platform` set to the
+  runner's own.
+- **Each platform builds natively, on its own runner:** no QEMU, so
+  arm64 builds as fast as amd64, in parallel. Each build downloads
+  almalinux's geo-blocking data itself, so the data can differ slightly
+  between platforms.
+- **A `push` job per image merges its platforms:** each build job saves
+  its image as a `docker-archive` (`oci-archive` would drop `SHELL`)
+  artifact, kept one day. The `push` job adds every platform's archive to
+  one manifest list, and fails if one is missing rather than push a
+  partial list. It runs even when another image's build failed, so one
+  broken image doesn't hold back the others. Pull requests build every
+  platform but upload nothing.
 - **Pushed images are signed**, then pulled back with the image's own
   `policy.json` to check the signature. See "Signing".
 
