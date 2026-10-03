@@ -34,7 +34,7 @@ export INSTALL_K3S_VERSION="v${KUBERNETES_VERSION:?}+k3s1"
 # The package's runtime is crun, its own copy (/usr/libexec/crio/crun,
 # /etc/crio/crio.conf.d/10-crio.conf).
 crio_repo="https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v${KUBERNETES_VERSION%.*}/rpm/"
-dnf -y install --setopt=install_weak_deps=False \
+dnf -yq install --setopt=install_weak_deps=False \
     --repofrompath=cri-o,"${crio_repo}" \
     --setopt=cri-o.gpgcheck=1 --setopt=cri-o.gpgkey="${crio_repo}repodata/repomd.xml.key" \
     cri-o

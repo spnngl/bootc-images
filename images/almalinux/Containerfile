@@ -126,11 +126,11 @@ COPY --link ./almalinux/sysroot/ /
 
 RUN <<EORUN
 # Install base stuff + repos
-dnf -y install ca-certificates dnf-plugins-core epel-release \
+dnf -yq install ca-certificates dnf-plugins-core epel-release \
     glibc-langpack-en glibc-langpack-fr
 
 # Install packages (needs epel)
-dnf -y install \
+dnf -yq install \
     sysstat iproute iputils procps-ng util-linux coreutils \
     e2fsprogs mdadm lvm2 cryptsetup tree htop btrfs-progs firewalld \
     netcat vim git nftables podman buildah \
@@ -164,8 +164,8 @@ systemctl enable sshd.service firewalld.service \
     mdmonitor.service
 
 # Cleanup
-dnf -y autoremove
-dnf clean all
+dnf -yq autoremove
+dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
@@ -199,15 +199,15 @@ RUN <<EORUN
 dnf-3 config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 
 # Install docker stuff
-dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
+dnf -yq install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
     docker-compose-plugin docker-model-plugin
 
 # Systemd services
 systemctl enable docker.service containerd.service
 
 # Cleanup
-dnf -y autoremove
-dnf clean all
+dnf -yq autoremove
+dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
