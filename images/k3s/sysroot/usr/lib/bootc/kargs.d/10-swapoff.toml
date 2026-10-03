@@ -1,0 +1,1 @@
+kargs = ["systemd.swap=0", "noresume"]
