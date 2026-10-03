@@ -265,9 +265,10 @@ Container images only: disk images need `config.toml`.
   almalinux's geo-blocking data itself, so the data can differ slightly
   between platforms.
 - **A `push` job per image merges its platforms:** each build job saves
-  its image as a `docker-archive` (`oci-archive` would drop `SHELL`)
-  artifact, kept one day. The `push` job adds every platform's archive to
-  one manifest list, and fails if one is missing rather than push a
+  its image as a `dir:` transport folder with gzipped layers
+  (`podman save --format docker-dir --compress`; OCI would drop `SHELL`),
+  uploaded as an artifact kept one day. The `push` job adds every
+  platform's folder to one manifest list, and fails if one is missing rather than push a
   partial list. It runs even when another image's build failed, so one
   broken image doesn't hold back the others. Pull requests build every
   platform but upload nothing.

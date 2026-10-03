@@ -124,16 +124,11 @@ jobs:
       TARGET: ${{ matrix.image.target }}
       ARCH: ${{ matrix.platform.arch }}
       TAG: ghcr.io/spnngl/bootc-images/${{ matrix.image.name }}:${{ matrix.image.version }}${{ matrix.image.suffix }}
-      # Same as the push job's: <image>_<arch>.tar. "_" can't appear in a
-      # tag suffix, so fedora_44_* doesn't match fedora_44-k3s_*.
-      ARCHIVE: ${{ matrix.image.name }}_${{ matrix.image.version }}${{ matrix.image.suffix }}_${{ matrix.platform.arch }}.tar
+      # Same as the push job's: <image>_<arch>. "_" can't appear in a tag
+      # suffix, so fedora_44_* doesn't match fedora_44-k3s_*.
+      ARTIFACT: ${{ matrix.image.name }}_${{ matrix.image.version }}${{ matrix.image.suffix }}_${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@v7
-
-      # Reproducible builds
-      # See:https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
-      - name: Get Git commit timestamps
-        run: echo "TIMESTAMP=$(git log -1 --format=%ct)" >> $GITHUB_ENV
 
       # Same flags as scripts/build.sh: context is images/, and
       # --format=docker because the OCI format drops SHELL. --platform is
@@ -141,21 +136,26 @@ jobs:
       # instead of building the wrong one. The source label links the
       # ghcr.io package to this repository. --target only when the matrix
       # sets one.
-      - run: >-
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" --build-arg "KUBERNETES_VERSION=${KUBERNETES_VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
-        env:
-          SOURCE_DATE_EPOCH: ${{ env.TIMESTAMP }}
-      # Hand the image to the push job. docker-archive, not oci-archive:
-      # converting to OCI would drop SHELL.
+      # SOURCE_DATE_EPOCH, the last commit's time, for reproducible builds.
+      # See: https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
+      - run: |-
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" --build-arg "KUBERNETES_VERSION=${KUBERNETES_VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
+      # Hand the image to the push job as a dir: transport folder.
+      # docker-dir keeps the v2s2 manifest (OCI would drop SHELL), and
+      # --compress gzips the layers here, both platforms in parallel: the
+      # artifact is smaller, and the push job sends the blobs as they are.
       - if: github.event_name != 'pull_request'
-        run: podman save --format docker-archive -o "${RUNNER_TEMP}/${ARCHIVE}" "${TAG}"
-      # archive: false uploads the tarball as is, under its file name:
-      # zipping several GB is slow, and the push job reads the tarball.
+        run: podman save --format docker-dir --compress -o "${RUNNER_TEMP}/${ARTIFACT}" "${TAG}"
+      # compression-level 0: the layers are already gzipped.
+      # overwrite: "Re-run all jobs" uploads names this run already has.
       - if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          path: ${{ runner.temp }}/${{ env.ARCHIVE }}
-          archive: false
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}/${{ env.ARTIFACT }}
+          compression-level: 0
+          overwrite: true
           if-no-files-found: error
           retention-days: 1
 
@@ -186,23 +186,23 @@ jobs:
       # The build job's platform list.
       ARCHES: amd64 arm64
       TAG: ghcr.io/spnngl/bootc-images/${{ matrix.image.name }}:${{ matrix.image.version }}${{ matrix.image.suffix }}
-      ARCHIVE_PREFIX: ${{ matrix.image.name }}_${{ matrix.image.version }}${{ matrix.image.suffix }}
+      ARTIFACT_PREFIX: ${{ matrix.image.name }}_${{ matrix.image.version }}${{ matrix.image.suffix }}
     steps:
       - uses: actions/checkout@v7
 
+      # One folder per artifact, named after it: <prefix>_<arch>.
       - uses: actions/download-artifact@v8
         with:
-          pattern: ${{ env.ARCHIVE_PREFIX }}_*.tar
+          pattern: ${{ env.ARTIFACT_PREFIX }}_*
           path: ${{ runner.temp }}/images
-          merge-multiple: true
       # One manifest list named TAG, an image per platform. Adding a
-      # missing archive fails: never push a list without every platform.
-      # The list points at the archives: the push below reads them.
+      # missing folder fails: never push a list without every platform.
+      # The list points at the folders: the push below reads them.
       - run: |-
           read -r -a arches <<< "${ARCHES}"
           podman manifest create "${TAG}"
           for arch in "${arches[@]}"; do
-            podman manifest add "${TAG}" "docker-archive:${RUNNER_TEMP}/images/${ARCHIVE_PREFIX}_${arch}.tar"
+            podman manifest add "${TAG}" "dir:${RUNNER_TEMP}/images/${ARTIFACT_PREFIX}_${arch}"
           done
       # Install the files hosts get from the image, at the same paths: the
       # push only writes sigstore signatures where registries.d enables them,
