@@ -1,0 +1,24 @@
+kube-apiserver-arg:
+  - "profiling=false"
+  - "logging-format=json"
+  - "feature-gates=kube:HPAScaleToZero=true"
+  - "tls-min-version=VersionTLS12"
+  - "anonymous-auth=false"
+  - "request-timeout=120s"
+  - "enable-admission-plugins=NamespaceExists,NodeRestriction,PodSecurity"
+  - "admission-control-config-file=/etc/rancher/k3s/admission-controls/admission-controls.yaml"
+  # TODO audit logs ?
+
+kube-controller-manager-arg:
+  - "profiling=false"
+  - "logging-format=json"
+  - "feature-gates=kube:HPAScaleToZero=true"
+  - "tls-min-version=VersionTLS12"
+  # XXX cilium does it on its own
+  - "allocate-node-cidrs=false"
+
+kube-scheduler-arg:
+  - "profiling=false"
+  - "logging-format=json"
+  - "feature-gates=kube:HPAScaleToZero=true"
+  - "tls-min-version=VersionTLS12"
