@@ -51,11 +51,18 @@ rm /etc/containers/registries.conf.d/crio.conf
 #
 # Used ports
 # - 6443: k3s supervisor and Kubernetes API server
-# - 51871/udp: Cilium WireGuard tunnel between nodes. In tunnel routing
-#   mode VXLAN/Geneve runs inside it, so 8472/6081 stay closed. Cilium's
-#   health checks use ICMP, which firewalld zones accept by default, so
-#   4240/tcp stays closed too.
+# - 51871/udp: Cilium WireGuard tunnel between nodes.
+# - 6081/udp: Cilium Geneve overlay (routing-mode tunnel, tunnel-protocol
+#   geneve). Nodes sit on different providers with no shared L2, so native
+#   routing is impossible (cilium Documentation/network/concepts/routing.rst,
+#   "Requirements on the network"). Pod-to-pod Geneve runs inside WireGuard,
+#   but node-to-node encryption opts control-plane nodes out, so Geneve
+#   between a k3s server and an agent node (host <-> remote pod) is plain and
+#   needs the port. 8472/udp (VXLAN) stays closed.
 #   https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules
+# - 4240/tcp: cilium-health HTTP probes between nodes. Cilium uses ICMP *and*
+#   TCP 4240; without the port every node reports its peers unreachable
+#   ("HTTP to agent: no route to host"), the datapath itself still works.
 # - 10250: kubelet, between all nodes (k3s requirements, for metrics-server,
 #   deployed separately).
 #   Cilium's node-to-node encryption doesn't cover it: it leaves out
@@ -70,7 +77,8 @@ rm /etc/containers/registries.conf.d/crio.conf
 # 10.42.0.0/16 and 10.43.0.0/16. Cilium's pod CIDR is set to the same
 # (K3S.md). Without it, the public zone rejects pod traffic to the host, and
 # on AlmaLinux its geoblock policy drops it as private (geoblock-bogons).
-firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=51871/udp
+firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=4240/tcp \
+    --add-port=51871/udp --add-port=6081/udp
 firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 --add-source=10.43.0.0/16
 firewall-offline-cmd --check-config
 

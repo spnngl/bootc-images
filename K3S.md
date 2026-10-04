@@ -38,6 +38,7 @@ own signature policy, `/etc/crio/policy.json` (accepts anything), not
 ## Control-plane
 
 ```sh
+systemctl mask k3s-agent
 systemctl enable --now k3s
 cat /var/lib/rancher/k3s/server/node-token   # the agents' token
 ```
@@ -54,6 +55,7 @@ server: https://<control-plane IP>:6443
 token: <node-token>
 EOF
 chmod 0600 /etc/rancher/k3s/config.yaml
+systemctl mask k3s
 systemctl enable --now k3s-agent
 ```
 
@@ -75,12 +77,15 @@ cilium install \
     --set encryption.enabled=true \
     --set encryption.type=wireguard \
     --set encryption.nodeEncryption=true \
+    --set routingMode=tunnel \
+    --set tunnelProtocol=geneve \
     --set ipam.operator.clusterPoolIPv4PodCIDRList=10.42.0.0/16 \
     --set cni.binPath=/var/opt/cni/bin
 ```
 
-The image's firewall expects these, and Cilium's default tunnel routing
-mode. The pod CIDR is k3s' own, rather than Cilium's default
+The image's firewall expects these. Tunnel mode is mandatory: the nodes
+are on different providers with no shared L2 and no BGP, so nothing routes
+the pod CIDRs between them (native routing cannot work). The pod CIDR is k3s' own, rather than Cilium's default
 `10.0.0.0/8`, which holds k3s' service CIDR (`10.43.0.0/16`).
 `cni.binPath`: Cilium's default, `/opt/cni/bin`, is read-only on bootc;
 CRI-O looks for CNI plugins in `/var/opt/cni/bin`
@@ -110,7 +115,9 @@ Open on the `public` zone, see `images/k3s/install.sh` for why:
 |-----------|------------------------------------------------|
 | 6443/tcp  | API server, on the control-plane               |
 | 10250/tcp | kubelet, between all nodes                     |
+| 4240/tcp  | cilium-health probes, between all nodes        |
 | 51871/udp | Cilium WireGuard, between all nodes            |
+| 6081/udp  | Cilium Geneve overlay, between all nodes       |
 
 `10.42.0.0/16` (pods) and `10.43.0.0/16` (services) are sources of the
 `trusted` zone.
