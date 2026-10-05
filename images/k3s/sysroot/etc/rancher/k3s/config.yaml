@@ -1,7 +1,7 @@
 kube-apiserver-arg:
   - "profiling=false"
   - "logging-format=json"
-  - "feature-gates=kube:HPAScaleToZero=true"
+  - "feature-gates=HPAScaleToZero=true"
   - "tls-min-version=VersionTLS12"
   - "anonymous-auth=false"
   - "request-timeout=120s"
@@ -12,7 +12,7 @@ kube-apiserver-arg:
 kube-controller-manager-arg:
   - "profiling=false"
   - "logging-format=json"
-  - "feature-gates=kube:HPAScaleToZero=true"
+  - "feature-gates=HPAScaleToZero=true"
   - "tls-min-version=VersionTLS12"
   # XXX cilium does it on its own
   - "allocate-node-cidrs=false"
@@ -20,5 +20,5 @@ kube-controller-manager-arg:
 kube-scheduler-arg:
   - "profiling=false"
   - "logging-format=json"
-  - "feature-gates=kube:HPAScaleToZero=true"
+  - "feature-gates=HPAScaleToZero=true"
   - "tls-min-version=VersionTLS12"
