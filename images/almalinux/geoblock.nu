@@ -3,18 +3,25 @@
 # build time. IPv4 only: IPv6 is disabled on the hosts
 # (images/fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf).
 #
-# Usage: use geoblock.nu; geoblock <src-dir> <bogons-dir> <dst-dir>
-#        (or: nu geoblock.nu <src-dir> <bogons-dir> <dst-dir>)
+# Usage: use geoblock.nu; geoblock <zones> <feeds> <bogons> <out> ...<country>
+#        (or: nu geoblock.nu <zones> <feeds> <bogons> <out> ...<country>)
 #
-# <src-dir> must contain:
-#   countries/*.zone    ipdeny CIDRs, one file per blocked country
-#   blocklists/*.txt    one file per threat feed, one address per line
-# <bogons-dir> holds the static geoblock-bogons.xml ipset.
+#   <zones>     ipdeny zones, <country>.zone: the CIDRs of one country
+#   <feeds>     *.txt, one file per threat feed, one address per line
+#   <bogons>    holds the static geoblock-bogons.xml ipset
+#   <country>   the blocked countries, lowercase ISO 3166-1 alpha-2 codes
 #
-# Writes to <dst-dir>:
-#   geoblock.xml    firewalld ipset, all blocked countries
-#   blocklist.xml   firewalld ipset, feed entries not inside a blocked
+# Writes under <out>, the image root:
+#   usr/share/geoblock/countries/<country>.zone
+#                   the networks of each blocked country, compacted
+#   usr/lib/firewalld/ipsets/geoblock.xml
+#                   firewalld ipset, all blocked countries
+#   usr/lib/firewalld/ipsets/blocklist.xml
+#                   firewalld ipset, feed entries not inside a blocked
 #                   country
+#
+# Both ipsets are compacted: the fewest networks covering the same
+# addresses, so the smallest sets for the kernel.
 #
 # `firewall-offline-cmd --check-config` does not validate ipset entries: an
 # invalid entry is silently ignored, and overlapping or empty sets are
@@ -99,26 +106,58 @@ export def with-root []: list<record> -> list<record<net: record, root: any>> {
     } {}
 }
 
-# Merge into a sorted list without duplicates or overlaps: firewalld
-# rejects an ipset whose entries overlap.
-export def collapse []: list<record> -> list<record> {
-    with-root | where root == null | get net
+# The fewest networks covering exactly the addresses start..end: from
+# start, each time the largest network aligned on it that ends by end.
+def range-nets []: record<start: int, end: int> -> list<record<start: int, len: int>> {
+    let end = $in.end
+    generate {|start|
+        mut len = 32
+        while $len > 0 and $start mod (net-size ($len - 1)) == 0 and $start + (net-size ($len - 1)) - 1 <= $end {
+            $len -= 1
+        }
+        let net = {start: $start, len: $len}
+        let next = $start + (net-size $len)
+        if $next > $end { {out: $net} } else { {out: $net, next: $next} }
+    } $in.start
 }
 
-# Every country network, collapsed. Fails on a network overlapping a bogon
-# (non-global range): the bogon ipset already drops those at runtime, so
-# this only catches corrupt data (0.0.0.0/0 would block everything) with a
-# clearer error.
-export def load-countries [src: path, bogons: list<record>]: nothing -> list<record<start: int, len: int>> {
-    let files = glob ($src | path join countries '*.zone') | sort
-    if ($files | is-empty) { error make --unspanned {msg: $"($src)/countries: no zone files found"} }
-    let countries = $files | each {|f|
+# Compact into the fewest networks covering the same addresses, sorted,
+# without duplicates or overlaps: firewalld rejects an ipset whose entries
+# overlap. Sorted by start, overlapping or adjacent networks merge into
+# one address range (each network extends the range of the previous one,
+# or starts a new one, so the last of each run holds the whole range),
+# then range-nets splits each range back into networks: 1.0.0.0/24 and
+# 1.0.1.0/24 become 1.0.0.0/23.
+export def collapse []: list<record> -> list<record<start: int, len: int>> {
+    sort-by start | generate {|net, range|
+        let end = $net.start + (net-size $net.len) - 1
+        let range = if $range.end? != null and $net.start <= $range.end + 1 {
+            {start: $range.start, end: ([$range.end $end] | math max)}
+        } else {
+            {start: $net.start, end: $end}
+        }
+        {out: $range, next: $range}
+    } {} | chunk-by {|range| $range.start } | each {|run| $run | last | range-nets } | flatten
+}
+
+# The networks of each country, as {code, nets}, nets compacted. Fails on
+# a country without a zone file (a typo, or a code ipdeny doesn't have),
+# on an empty zone, and on a network overlapping a bogon (non-global
+# range): the bogon ipset already drops those at runtime, so this only
+# catches corrupt data (0.0.0.0/0 would block everything) with a clearer
+# error.
+export def load-countries [zones: path, codes: list<string>, bogons: list<record>]: nothing -> table<code: string, nets: list<record<start: int, len: int>>> {
+    if ($codes | is-empty) { error make --unspanned {msg: 'no countries given'} }
+    let countries = $codes | each {|code|
+        let f = $zones | path join $'($code).zone'
+        if not ($f | path exists) { error make --unspanned {msg: $"country '($code)': no zone file ($f)"} }
         let nets = parse-file --strict $f
         if ($nets | is-empty) { error make --unspanned {msg: $"($f): no entries"} }
-        $nets
-    } | flatten
+        {code: $code, nets: $nets}
+    }
 
-    let overlap = [...($bogons | insert kind bogon) ...($countries | insert kind country)]
+    let all = $countries | get nets | flatten
+    let overlap = [...($bogons | insert kind bogon) ...($all | insert kind country)]
         | with-root | where {|r| $r.root != null and $r.root.kind != $r.net.kind } | get 0?
     if $overlap != null {
         let pair = [$overlap.net $overlap.root]
@@ -126,7 +165,7 @@ export def load-countries [src: path, bogons: list<record>]: nothing -> list<rec
         let bogon = $pair | where kind == bogon | first | format-net
         error make --unspanned {msg: $"country network ($country) overlaps non-global ($bogon)"}
     }
-    $countries | collapse
+    $countries | update nets { collapse }
 }
 
 export def load-bogons [dir: path]: nothing -> list<record<start: int, len: int>> {
@@ -140,13 +179,13 @@ export def load-bogons [dir: path]: nothing -> list<record<start: int, len: int>
     }
 }
 
-# Every feed entry, collapsed, minus those inside a blocked country: the
+# Every feed entry minus those inside a blocked country, compacted: the
 # blocklist policy runs after the geoblock one, so it never sees traffic
 # from those, and they could never match. An entry only partly inside a
 # country is kept whole.
-export def load-blocklists [src: path, countries: list<record>]: nothing -> list<record<start: int, len: int>> {
-    let feeds = glob ($src | path join blocklists '*.txt') | sort
-    if ($feeds | is-empty) { error make --unspanned {msg: $"($src)/blocklists: no feed files found"} }
+export def load-blocklists [dir: path, countries: list<record>]: nothing -> list<record<start: int, len: int>> {
+    let feeds = glob ($dir | path join '*.txt') | sort
+    if ($feeds | is-empty) { error make --unspanned {msg: $"($dir): no feed files found"} }
     let entries = $feeds | each {|f|
         let nets = parse-file $f
         if ($nets | length) < $MIN_FEED_ENTRIES {
@@ -158,7 +197,7 @@ export def load-blocklists [src: path, countries: list<record>]: nothing -> list
     # Countries first: on a tie, the country network is the root and the
     # equal feed entry is dropped.
     [...($countries | insert kind country) ...($entries | insert kind feed)]
-        | with-root | where root == null and net.kind == feed | get net | reject kind
+        | with-root | where root == null and net.kind == feed | get net | reject kind | collapse
 }
 
 export def render-ipset [nets: list<record>]: nothing -> string {
@@ -172,11 +211,19 @@ export def render-ipset [nets: list<record>]: nothing -> string {
     ] | str join "\n"
 }
 
-export def main [src: path, bogons: path, dst: path] {
-    let countries = load-countries $src (load-bogons $bogons)
-    let blocklists = load-blocklists $src $countries
-    mkdir $dst
-    render-ipset $countries | save --force ($dst | path join geoblock.xml)
-    render-ipset $blocklists | save --force ($dst | path join blocklist.xml)
-    print $"geoblock ($countries | length), blocklist ($blocklists | length)"
+export def main [zones: path, feeds: path, bogons: path, out: path, ...countries: string] {
+    let countries = load-countries $zones $countries (load-bogons $bogons)
+    let geoblock = $countries | get nets | flatten | collapse
+    let blocklist = load-blocklists $feeds $geoblock
+
+    let zone_dir = $out | path join usr share geoblock countries
+    let ipset_dir = $out | path join usr lib firewalld ipsets
+    mkdir $zone_dir $ipset_dir
+    for country in $countries {
+        [...($country.nets | each { format-net }) ''] | str join "\n"
+            | save --force ($zone_dir | path join $'($country.code).zone')
+    }
+    render-ipset $geoblock | save --force ($ipset_dir | path join geoblock.xml)
+    render-ipset $blocklist | save --force ($ipset_dir | path join blocklist.xml)
+    print $"geoblock ($geoblock | length), blocklist ($blocklist | length)"
 }

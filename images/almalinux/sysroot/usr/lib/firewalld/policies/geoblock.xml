@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <policy target="CONTINUE" priority="-10000">
   <short>Geo-blocking</short>
-  <description>Drop incoming traffic from the public zone whose source is in a blocked country (raw data: /usr/share/geoblock/countries). IPv4 only: IPv6 is disabled. Runs before the blocklist policy (priority -9000).</description>
+  <description>Drop incoming traffic from the public zone whose source is in a blocked country (networks of each country: /usr/share/geoblock/countries). IPv4 only: IPv6 is disabled. Runs before the blocklist policy (priority -9000).</description>
   <ingress-zone name="public"/>
   <egress-zone name="HOST"/>
   <rule family="ipv4"><source ipset="geoblock-bogons"/><drop/></rule>

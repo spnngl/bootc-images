@@ -21,10 +21,10 @@ ARG BASE_VERSION=10.2
 # NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
-# Build-only stage: downloads the geo-blocking data of the blocked countries
-# and 10 public threat feeds, then turns them into firewalld ipsets under
-# /out with geoblock.nu. Nothing from this stage reaches the final image
-# except /out.
+# Build-only stage: downloads the geo-blocking data of every country and
+# 10 public threat feeds, then turns the blocked countries and the feeds
+# into compacted firewalld ipsets under /out with geoblock.nu. Nothing
+# from this stage reaches the final image except /out.
 #
 # ADD, not RUN curl: buildah puts the digest of the downloaded content in
 # the build cache key, so changed data reruns the steps below and
@@ -32,7 +32,7 @@ ARG BASE_VERSION=10.2
 # the image; there is no timer or cron job.
 #
 # The output is plain data, the same for every platform.
-FROM --platform=${BUILDPLATFORM} ghcr.io/nushell/nushell:0.116.0-alpine AS geoblock
+FROM --platform=${BUILDPLATFORM} ghcr.io/nushell/nushell:0.116.1-alpine AS geoblock
 
 # The nushell image runs as user "nushell": switch back to root so the
 # RUN below can write /out, and its output is owned by root like the rest
@@ -43,13 +43,13 @@ USER 0
 # depend on the image's default config.
 SHELL ["/usr/bin/nu", "--no-history", "--no-config-file", "-c"]
 
-# Blocked countries, ipdeny aggregated IPv4 zones (ISO 3166-1 alpha-2
-# codes): Afghanistan, Azerbaijan, Bangladesh, Brazil, China, Iran, Iraq,
-# North Korea, Pakistan, Russia, Turkey. Several sources: ADD names each
-# file after its URL. IPv4 only, like everything here: IPv6 is disabled
-# (fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf).
+# The IPv4 zones of every country, from ipdeny, one <code>.zone per
+# country: the blocked ones are picked in the RUN below. Not aggregated
+# (US: 70 K networks), geoblock.nu compacts them. Stays an archive: ADD
+# only unpacks local ones. IPv4 only, like everything here: IPv6 is
+# disabled (fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf).
 ADD --chmod=0644 \
-    https://www.ipdeny.com/ipblocks/data/aggregated/af-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/az-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/bd-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/br-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/cn-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/ir-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/iq-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/kp-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/pk-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/ru-aggregated.zone https://www.ipdeny.com/ipblocks/data/aggregated/tr-aggregated.zone /out/usr/share/geoblock/countries/
+    https://www.ipdeny.com/ipblocks/data/countries/all-zones.tar.gz /geoblock/
 # AbuseIPDB 100 % confidence score, last 24 h (~67 K)
 ADD --chmod=0644 \
     https://raw.githubusercontent.com/borestad/blocklist-abuseipdb/refs/heads/main/abuseipdb-s100-1d.ipv4 /out/usr/share/geoblock/blocklists/abuseipdb.txt
@@ -90,12 +90,52 @@ COPY almalinux/sysroot/usr/lib/firewalld/ipsets/geoblock-bogons.xml /geoblock/bo
 # runs on the real data. `use x.nu` makes x.nu's main the command `x`.
 WORKDIR /geoblock
 # ShellCheck, which hadolint runs on RUN, does not know nushell.
-# hadolint ignore=SC1008
+# hadolint ignore=SC1008,SC2086
 RUN <<EORUN
+mkdir zones
+^tar -xzf all-zones.tar.gz -C zones
+
 use test_geoblock.nu
 use geoblock.nu
+
 test_geoblock
-geoblock /out/usr/share/geoblock bogons /out/usr/lib/firewalld/ipsets
+
+# Blocked countries, ISO 3166-1 alpha-2 codes. geoblock.nu fails on a code with no
+# zone. Sadly I cannot block USA cause geolocation is by address registration.
+let countries = [
+    ad  # Andorra
+    af  # Afghanistan
+    az  # Azerbaijan
+    bd  # Bangladesh
+    br  # Brazil
+    by  # Belarus
+    cn  # China
+    cu  # Cuba
+    gh  # Ghana
+    gy  # Guyana
+    hk  # Hong Kong
+    id  # Indonesia
+    il  # Israel
+    in  # India
+    iq  # Iraq
+    ir  # Iran
+    kp  # North Korea
+    kz  # Kazakhstan
+    mm  # Myanmar
+    mo  # Macao
+    ng  # Nigeria
+    pk  # Pakistan
+    ru  # Russia
+    sy  # Syria
+    tr  # Turkey
+    ua  # Ukraine
+    uz  # Uzbekistan
+    ve  # Venezuela
+    vn  # Vietnam
+    ye  # Yemen
+    za  # South Africa
+]
+geoblock zones /out/usr/share/geoblock/blocklists bogons /out ...$countries
 EORUN
 
 

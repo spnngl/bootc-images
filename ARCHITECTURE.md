@@ -99,9 +99,8 @@ Geo-blocking and blocklists:
 - Two firewalld policies sit on the `public` zone: `geoblock`
   (priority -10000) drops private/link-local sources (the static,
   committed ipset `geoblock-bogons`) and sources in a blocked
-  country (Afghanistan, Azerbaijan, Bangladesh, Brazil, China, Iran,
-  Iraq, North Korea, Pakistan, Russia, Turkey: the list is the `ADD`s of
-  the Containerfile); `blocklist` (priority -9000) then drops sources
+  country (the `countries` list in the Containerfile's `geoblock`
+  stage); `blocklist` (priority -9000) then drops sources
   listed by 10 public threat feeds. Both `target=CONTINUE`, so traffic
   that isn't dropped still goes through the existing `public` zone rules
   unchanged.
@@ -109,15 +108,25 @@ Geo-blocking and blocklists:
   `images/fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf`. IPv6
   entries in the threat feeds are skipped.
 - The country and blocklist data is baked in at build time, not fetched
-  at runtime. A build-only stage, `geoblock`, downloads the ipdeny lists
-  and the feeds with `ADD`, then `images/almalinux/geoblock.nu` turns
-  them into firewalld ipsets. The stage is the `ghcr.io/nushell/nushell`
+  at runtime. A build-only stage, `geoblock`, downloads the ipdeny zones
+  of every country (one archive) and the feeds with `ADD`, then
+  `images/almalinux/geoblock.nu` turns the blocked countries and the
+  feeds into firewalld ipsets. The stage is the `ghcr.io/nushell/nushell`
   image with nushell as its `SHELL`: its `RUN` is nushell code.
-  Feed entries inside a blocked country are left out: the `blocklist`
-  policy never sees that traffic, so they can never match. Nothing from
-  that stage reaches the final image except the generated ipsets and the
-  raw files (`/usr/share/geoblock`, kept so a blocked IP can be traced to
-  its country or feed).
+  Both ipsets are compacted: overlapping and adjacent networks merge into
+  the fewest covering the same addresses (ipdeny's zones aren't
+  aggregated, and the feeds overlap). Feed entries inside a blocked
+  country are left out: the `blocklist` policy never sees that traffic,
+  so they can never match. Nothing from that stage reaches the final
+  image except the generated ipsets, each blocked country's compacted
+  networks (`/usr/share/geoblock/countries`) and the raw feeds
+  (`/usr/share/geoblock/blocklists`), kept so a blocked IP can be traced
+  to its country or feed.
+- Countries are geolocated by address registration, not by where a
+  server is: the US zone also covers the European regions of US clouds
+  (AWS, GCP, Azure), Cloudflare and GitHub. Blocking it drops their
+  inbound traffic (webhooks, monitoring, proxied requests); outbound
+  connections and their replies still work.
 - A blocklist fails closed: corrupt country data blocks legitimate
   traffic, possibly the admin's. `geoblock.nu` fails the build on any
   invalid entry, on an empty country file and on a country network that
