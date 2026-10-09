@@ -87,7 +87,9 @@ jobs:
         #
         # Optional keys, for multi-stage Containerfiles: target, the stage to
         # build (default: the last one), and suffix, appended to the tag.
-        # fedora and almalinux: dockerenv is <version>, kubeenv <version>-k3s.
+        # fedora and almalinux: dockerenv is <version>, kubeenv
+        # <version>-v<Kubernetes release>k3s (the suffix, an anchor: write the
+        # release once, in sync with KUBERNETES_VERSION below).
         # cs-firewall-bouncer: one stage, no target; the version is the
         # bouncer release, keep it in sync with the Containerfile's BASE_VERSION.
         # The push job reuses this list (YAML anchor).
@@ -98,21 +100,21 @@ jobs:
           - name: fedora
             version: "44"
             target: kubeenv
-            suffix: -k3s
+            suffix: &k3s -v1.36.5k3s
           - name: almalinux
             version: "9.8"
             target: dockerenv
           - name: almalinux
             version: "9.8"
             target: kubeenv
-            suffix: -k3s
+            suffix: *k3s
           - name: almalinux
             version: "10.2"
             target: dockerenv
           - name: almalinux
             version: "10.2"
             target: kubeenv
-            suffix: -k3s
+            suffix: *k3s
           - name: cs-firewall-bouncer
             version: "0.0.38"
         # Every image is built for every platform. Keep the push job's
@@ -124,7 +126,8 @@ jobs:
             runner: ubuntu-26.04-arm
     env:
       # kubeenv's k3s and CRI-O release: the Containerfiles' ARG
-      # KUBERNETES_VERSION, keep their default in sync.
+      # KUBERNETES_VERSION, keep their default in sync, and the kubeenv
+      # suffix above (-v<release>k3s).
       KUBERNETES_VERSION: 1.36.5
       NAME: ${{ matrix.image.name }}
       VERSION: ${{ matrix.image.version }}
@@ -132,7 +135,7 @@ jobs:
       ARCH: ${{ matrix.platform.arch }}
       TAG: ghcr.io/spnngl/images/${{ matrix.image.name }}:${{ matrix.image.version }}${{ matrix.image.suffix }}
       # Same as the push job's: <image>_<arch>. "_" can't appear in a tag
-      # suffix, so fedora_44_* doesn't match fedora_44-k3s_*.
+      # suffix, so fedora_44_* doesn't match fedora_44-v1.36.5k3s_*.
       ARTIFACT: ${{ matrix.image.name }}_${{ matrix.image.version }}${{ matrix.image.suffix }}_${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@v7

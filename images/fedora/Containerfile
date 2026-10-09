@@ -3,12 +3,13 @@
 # Derived Fedora bootc image, in stages:
 #   - base: the host system (firewalld, sshd, chrony, systemd-networkd...).
 #     Not an image on its own.
-#   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix -k3s.
+#   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix
+#     -v<KUBERNETES_VERSION>k3s.
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
 # Build commands, same tags as CI (.github/workflows/build.yml):
 #   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44 images/
-#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44-k3s images/
+#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44-v1.36.5k3s images/
 #
 # scripts/build.sh does the first one (default target only) and also builds a
 # qcow2 disk image; scripts/run.sh boots it in QEMU.
@@ -99,7 +100,8 @@ RUN bootc container lint
 
 
 # Docker environment. Last stage, so the default target: it is the plain
-# fedora:<version> image, kubeenv being fedora:<version>-k3s.
+# fedora:<version> image, kubeenv being
+# fedora:<version>-v<KUBERNETES_VERSION>k3s.
 FROM base AS dockerenv
 
 RUN <<EORUN

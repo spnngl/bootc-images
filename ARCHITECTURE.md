@@ -36,7 +36,7 @@ For a bootc image there are two stages:
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
 │   └── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
 ├── config.example.toml         # template for config.toml (git-ignored)
-├── K3S.md                      # setting up k3s hosts (-k3s images)
+├── K3S.md                      # setting up k3s hosts (kubeenv images)
 └── output/                     # build results (git-ignored)
 ```
 
@@ -52,12 +52,17 @@ Docker or k3s. Stages:
 - `dockerenv` (`FROM base`, the last stage, so the default target and
   what `build.sh` builds): adds Docker. Tag `<name>:<version>`.
 - `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
-  Docker. Tag `<name>:<version>-k3s`. Every image's `kubeenv` runs the
+  Docker. Tag `<name>:<version>-v<KUBERNETES_VERSION>k3s`
+  (`fedora:44-v1.36.5k3s`). Every image's `kubeenv` runs the
   same `images/k3s/install.sh`, bind-mounted rather than copied (buildah
   still keys its cache on the script's content). k3s is pinned there
   (`INSTALL_K3S_VERSION`), in `/usr`, with a unit per role, both
   disabled: each host picks its role by hand. The Kubernetes release is
   the stage's `ARG KUBERNETES_VERSION`, set by CI like `BASE_VERSION`.
+  The tag carries it, so a host sees the Kubernetes release it tracks:
+  bump `KUBERNETES_VERSION` in both Containerfiles and the workflow, and
+  the workflow's kubeenv `suffix`, in one commit. `bootc upgrade` stays
+  on the same tag, so moving to another release is a `bootc switch`.
   The container runtime is CRI-O (same minor release, with crun),
   configured by `images/k3s/sysroot/`, copied after the script, which
   also puts k3s and CRI-O in `kube.slice`, out of `system.slice`. Cilium
@@ -416,7 +421,7 @@ It only supports macOS on Apple Silicon, and says so when run anywhere else.
   fetches `linux/amd64`, the x86-64-v3 build, and the new deployment
   won't boot (pick the previous one in GRUB, or `bootc rollback`).
   Upgrades on such hosts need a tag that points at the v2 build only.
-- **cs-firewall-bouncer and the `-k3s` images:** Cilium runs with
+- **cs-firewall-bouncer and the `kubeenv` images:** Cilium runs with
   `kubeProxyReplacement=true` (K3S.md), which handles NodePort and
   LoadBalancer traffic in eBPF before netfilter: the bouncer doesn't
   cover it. It covers the host's own services (sshd, the k3s API,

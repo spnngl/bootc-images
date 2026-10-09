@@ -1,7 +1,8 @@
 # k3s
 
-The `<name>:<version>-k3s` images (`kubeenv` stage, which runs
-`images/k3s/install.sh`) ship k3s for both roles, with the same binary:
+The `<name>:<version>-v<KUBERNETES_VERSION>k3s` images (`kubeenv` stage,
+which runs `images/k3s/install.sh`) ship k3s for both roles, with the
+same binary:
 
 - `k3s.service`: `k3s server`, the control-plane. One per cluster: the
   datastore is k3s' default, SQLite.
