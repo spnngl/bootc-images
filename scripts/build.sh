@@ -28,6 +28,10 @@ containerfile="images/${name}/Containerfile"
 version="$(sed -n -E 's/^ARG BASE_VERSION=([^[:space:]]+).*/\1/p' "${containerfile}")"
 [[ -n ${version} ]] || die "${containerfile} has no ARG BASE_VERSION=<version>"
 tag="ghcr.io/spnngl/bootc-images/${name}:${version}"
+# An application image (no bootc lint, see AGENTS.md) has no disk image to
+# build: image-builder would only fail late, after the build.
+grep -q '^RUN bootc container lint' "${containerfile}" ||
+    die "${containerfile} is not a bootc image, build it with: podman build --format=docker -f ${containerfile} -t ${tag} images/"
 [[ -f config.toml ]] || die "config.toml not found, start from: cp config.example.toml config.toml"
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
     die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
