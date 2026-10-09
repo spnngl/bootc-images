@@ -46,6 +46,12 @@ cat /var/lib/rancher/k3s/server/node-token   # the agents' token
 
 `kubectl` works as root, with `/etc/rancher/k3s/k3s.yaml`.
 
+The API server writes an audit log to `/var/log/kubernetes/audit/`
+(`images/k3s/sysroot/etc/rancher/k3s/config.yaml`, 7 days, 3 × 100 MB),
+filtered by `audit-policy.yaml` next to it: exec / attach / port-forward,
+reads of authenticated users (except Secrets), leases, access reviews and
+events are not logged.
+
 ## Agents
 
 The server URL and the token are machine-local, never in the image:

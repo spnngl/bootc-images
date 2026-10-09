@@ -1,0 +1,67 @@
+# kube-apiserver audit policy (config.yaml). The first matching rule wins. Sized for CrowdSec's
+# crowdsecurity/k8s-audit scenarios: who did what from where, the spec of created pods, Secrets access and RBAC changes.
+# Levels: None, Metadata (no body), Request (+ request body), RequestResponse.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+omitManagedFields: true
+rules:
+  # Interactive use (kubectl, Freelens): not logged, whatever the verb (GET over websocket,
+  # POST over SPDY).
+  - level: None
+    resources:
+      - group: ""
+        resources:
+          - "pods/exec"
+          - "pods/attach"
+          - "pods/portforward"
+  # The pod spec, for privileged / hostNetwork / hostPath pods. Literal env values are logged.
+  - level: Request
+    verbs:
+      - "create"
+    resources:
+      - group: ""
+        resources:
+          - "pods"
+  # Before the read rule: who reads or lists Secrets (no body). Kubelets and controllers
+  # included, about 1.5k requests an hour.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources:
+          - "secrets"
+  # Permission changes with their body: who granted what to whom. Rare.
+  - level: Request
+    verbs:
+      - "create"
+      - "update"
+      - "patch"
+      - "delete"
+      - "deletecollection"
+    resources:
+      - group: "rbac.authorization.k8s.io"
+  # Reads of authenticated users, most of the volume. A request failing authentication has no
+  # user and never matches: 401s stay logged.
+  - level: None
+    userGroups:
+      - "system:authenticated"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+  # Heartbeats, events and Kyverno reports: frequent, no security value.
+  - level: None
+    resources:
+      - group: "coordination.k8s.io"
+        resources:
+          - "leases"
+      - group: "authorization.k8s.io"
+      - group: "authentication.k8s.io"
+      - group: ""
+        resources:
+          - "events"
+      - group: "events.k8s.io"
+      - group: "reports.kyverno.io"
+      - group: "wgpolicyk8s.io"
+  - level: Metadata

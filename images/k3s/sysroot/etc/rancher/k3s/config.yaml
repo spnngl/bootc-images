@@ -6,7 +6,13 @@ kube-apiserver-arg:
   - "request-timeout=120s"
   - "enable-admission-plugins=NamespaceExists,NodeRestriction,PodSecurity"
   - "admission-control-config-file=/etc/rancher/k3s/admission-controls/admission-controls.yaml"
-  # TODO audit logs ?
+  # Audit log, read by Vector and CrowdSec in the cluster. Without max* flags the apiserver
+  # keeps 100 files of 100 MB for 366 days. The apiserver creates the folder (0700).
+  - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+  - "audit-log-path=/var/log/kubernetes/audit/audit.log"
+  - "audit-log-maxage=7"
+  - "audit-log-maxbackup=3"
+  - "audit-log-maxsize=100"
 
 kube-controller-manager-arg:
   - "profiling=false"
