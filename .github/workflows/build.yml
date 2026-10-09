@@ -1,6 +1,8 @@
-# Lint and build every bootc container image, then push it to
-# ghcr.io/spnngl/bootc-images/<name>:<version>, <version> being the
-# base image major release (the Containerfile's BASE_VERSION build arg).
+# Lint and build every container image (bootc images, plus application
+# images like cs-firewall-bouncer), then push it to
+# ghcr.io/spnngl/bootc-images/<name>:<version>, <version> being the base
+# image major release, or the upstream release for an application image
+# (the Containerfile's BASE_VERSION build arg).
 # Pull requests only lint and build, they never push.
 #
 # Only the container image is built here. Disk images stay local
@@ -40,6 +42,7 @@ jobs:
         containerfile:
           - images/fedora/Containerfile
           - images/almalinux/Containerfile
+          - images/cs-firewall-bouncer/Containerfile
     permissions:
       contents: read
       security-events: write
@@ -85,6 +88,8 @@ jobs:
         # Optional keys, for multi-stage Containerfiles: target, the stage to
         # build (default: the last one), and suffix, appended to the tag.
         # fedora and almalinux: dockerenv is <version>, kubeenv <version>-k3s.
+        # cs-firewall-bouncer: one stage, no target; the version is the
+        # bouncer release, keep it in sync with the Containerfile's BASE_VERSION.
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
@@ -108,6 +113,8 @@ jobs:
             version: "10.2"
             target: kubeenv
             suffix: -k3s
+          - name: cs-firewall-bouncer
+            version: "0.0.38"
         # Every image is built for every platform. Keep the push job's
         # ARCHES in sync.
         platform:
@@ -246,9 +253,12 @@ jobs:
           create-storage-record: false
       # Pull every platform back with the policy.json this image ships: fails
       # if the signing key doesn't match the committed public key, which
-      # would make hosts refuse every upgrade.
+      # would make hosts refuse every upgrade. An application image ships
+      # none: use fedora's, the policy of the hosts that pull it.
       - run: |-
+          policy="images/${NAME}/sysroot/etc/containers/policy.json"
+          [[ -f "${policy}" ]] || policy=images/fedora/sysroot/etc/containers/policy.json
           read -r -a arches <<< "${ARCHES}"
           for arch in "${arches[@]}"; do
-            podman pull --platform "linux/${arch}" --signature-policy "images/${NAME}/sysroot/etc/containers/policy.json" "${TAG}"
+            podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"
           done
