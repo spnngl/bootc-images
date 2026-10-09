@@ -49,7 +49,14 @@ Check the source rather than blog posts or memory:
 - New image: add it to both workflow matrices too (`hadolint` and `build`).
 - Must pass `hadolint` (config: `.hadolint.yaml`). Fix findings; ignore
   one only with a comment saying why.
-- The last instruction must be `RUN bootc container lint`.
+- bootc images: the last instruction must be `RUN bootc container lint`.
+  The `/usr`/`/etc`/`/var` and `policy.json` rules above are for bootc
+  images only.
+- Application images (a binary run as a container, not a host OS, e.g.
+  `images/cs-firewall-bouncer/`): static binary on `scratch`, no bootc
+  lint; the last instruction is an exec-form smoke test
+  (`RUN ["<binary>", ...]`) that needs no capability. `BASE_VERSION` is
+  the upstream release. `scripts/build.sh` refuses them.
 - Comment every significant step with *why*, and link docs when useful.
 
 ## Scripts

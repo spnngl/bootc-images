@@ -3,9 +3,11 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated.
+a container is updated. One folder, `images/cs-firewall-bouncer`, is not
+a bootc image but an application image: a container the hosts run (see
+its section).
 
-There are two stages:
+For a bootc image there are two stages:
 
 1. **Container image**: `podman build` on `images/<name>/Containerfile`.
    This is what hosts boot and update from.
@@ -26,7 +28,8 @@ There are two stages:
 │   ├── k3s/                    # shared by every kubeenv stage (not an image)
 │   │   ├── install.sh          # k3s and CRI-O install
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice
-│   └── <name>/                 # one folder per image
+│   └── <name>/                 # one folder per image (bootc, or application
+│       │                       # image: cs-firewall-bouncer)
 │       ├── Containerfile
 │       └── sysroot/...         # files copied as is into the image root
 ├── scripts/
@@ -173,6 +176,66 @@ Geo-blocking and blocklists:
   ipset entries from external data has to validate them itself; see
   `images/almalinux/geoblock.nu`.
 
+### `images/cs-firewall-bouncer`
+
+[cs-firewall-bouncer](https://github.com/crowdsecurity/cs-firewall-bouncer)
+built from source (tag `v<BASE_VERSION>`), on `scratch`. It pulls the
+bans of a CrowdSec Local API (LAPI) and drops those sources in nftables
+tables `ip crowdsec` and `ip6 crowdsec6`, hooked at `input` and `forward`
+with priority -10, before firewalld's chains. The LAPI (the security
+engine that decides the bans) is not part of this repository.
+
+- **An application image, not a bootc one.** The bouncer is one static Go
+  binary: shipping it as a container keeps it out of the host image, gives
+  it its own release cadence and rolls back by changing a tag. It has no
+  `bootc container lint`: its last instruction is a smoke test, the
+  binary run in exec form with `-T` (prints the merged config, no
+  netlink, no capability). That `RUN` leaves empty `/dev`, `/proc` and
+  `/sys` folders in the image: harmless, the runtime mounts over them.
+  `scripts/build.sh` refuses it: there is no disk image to build.
+- **`BASE_VERSION` is the bouncer release (`0.0.38`)**, also the tag.
+  The name is kept because `build.sh` and CI pass that build arg to every
+  image. Bump it in the Containerfile and in the workflow matrix, in one
+  commit, and diff upstream's `config/crowdsec-firewall-bouncer.yaml`
+  between tags.
+- **The sources come from `ADD <git url>#v<BASE_VERSION>`.** The commit
+  is not pinned: a tag can move, and this binary runs as root with
+  `NET_ADMIN` in the host network namespace, so the build trusts upstream
+  (buildah ignores `ADD --checksum` for git anyway). buildah runs the
+  host's `git` for it, which a podman machine must have. The source has
+  no `.git`, so the build passes `BUILD_VERSION` and `BUILD_TAG` to the
+  Makefile.
+- **Runtime contract (podman, rootful, documented in the
+  Containerfile):** host network, root, `--cap-drop all --cap-add
+  NET_ADMIN`, `--read-only`, `no-new-privileges`, and
+  `--security-opt label=disable`: container-selinux's `container.te`
+  grants `netlink_netfilter_socket` to the container runtime domain, not
+  to `container_t`. A test on Fedora CoreOS (selinux-policy 42,
+  enforcing) worked without it, so it's kept only so the bouncer doesn't
+  depend on the policy version. `API_URL` and `API_KEY` come from the runtime (the key
+  as a podman secret): no default LAPI, no key in the image. `scratch`
+  has no CA bundle: plain HTTP to the LAPI only.
+- **Config: `etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`**,
+  the upstream RPM's path. Mount one override file at
+  `<that path>.local`, which the bouncer deep-merges (maps merge,
+  scalars and lists are replaced): the host's
+  `/etc/crowdsec/firewall-bouncer.yaml`, mounted `:ro` without `:Z` (the
+  container is unconfined, and relabeling a host `/etc` file is wrong).
+  Only one file: `scratch` has no shell for a `.d/` wrapper. To replace
+  the config, mount a file and append `-c <path>` (it replaces the image's `CMD`).
+- **`retry_initial_connect: true`.** Without it, the bouncer exits (and
+  deletes its tables) when the first pull fails: a crash loop at boot, or
+  while a remote LAPI is down. Later errors are only logged and the bans
+  stay.
+- **Metrics** on `127.0.0.1:60601` of the host. **Kill switch:** stop the
+  container (a graceful stop deletes the tables). Don't `nft delete
+  table` while it runs: it doesn't recreate it.
+- **Interaction with the host firewall:** its own tables, independent of
+  firewalld (survives `firewall-cmd --reload`, nothing to open) and of
+  almalinux's geo-blocking, which also drops (overlap is harmless). The
+  admin's IP must be allowlisted on the LAPI, or a ban locks out sshd
+  (port 42022).
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -205,9 +268,9 @@ Geo-blocking and blocklists:
   is for local builds; CI passes it from its matrix.
 - **`bootc container lint` without `--fatal-warnings`.** Errors fail the
   build, warnings are only printed.
-- **hadolint on every Containerfile** (`.hadolint.yaml`). DL3041 (pin
-  dnf package versions) is ignored: packages follow the pinned base
-  release, like the base image does.
+- **hadolint on every Containerfile**, application images included
+  (`.hadolint.yaml`). DL3041 (pin dnf package versions) is ignored:
+  packages follow the pinned base release, like the base image does.
 - **One `RUN <<EORUN` heredoc with `set -xeuo pipefail`.** It gives one
   layer without `&& \` chains. `-e` is required because a heredoc `RUN`
   only fails on the exit status of its last command. Heredocs need
@@ -258,8 +321,9 @@ Container images only: disk images need `config.toml`.
   image and package updates, fresh almalinux geo-blocking data) and
   manual dispatch all push. Pull requests only lint and build.
 - **The matrix is the list of images**, each with its base version,
-  passed as `--build-arg BASE_VERSION`. A new image or a version bump
-  goes there too. The `push` job reuses it through a YAML anchor.
+  passed as `--build-arg BASE_VERSION` (for cs-firewall-bouncer, the
+  upstream release). A new image or a version bump goes there too. The
+  `push` job reuses it through a YAML anchor.
 - **Jobs run on `ubuntu-26.04` and `ubuntu-26.04-arm`, not
   `ubuntu-latest`.** They ship Podman
   5.7 / Buildah 1.42; `ubuntu-latest` (24.04) has buildah 1.33, and the
@@ -282,7 +346,9 @@ Container images only: disk images need `config.toml`.
   broken image doesn't hold back the others. Pull requests build every
   platform but upload nothing.
 - **Pushed images are signed**, then pulled back with the image's own
-  `policy.json` to check the signature. See "Signing".
+  `policy.json` to check the signature. See "Signing". An application
+  image ships none: the check uses fedora's, the policy of the hosts that
+  pull it.
 
 ## Signing
 
@@ -350,6 +416,11 @@ It only supports macOS on Apple Silicon, and says so when run anywhere else.
   fetches `linux/amd64`, the x86-64-v3 build, and the new deployment
   won't boot (pick the previous one in GRUB, or `bootc rollback`).
   Upgrades on such hosts need a tag that points at the v2 build only.
+- **cs-firewall-bouncer and the `-k3s` images:** Cilium runs with
+  `kubeProxyReplacement=true` (K3S.md), which handles NodePort and
+  LoadBalancer traffic in eBPF before netfilter: the bouncer doesn't
+  cover it. It covers the host's own services (sshd, the k3s API,
+  hostNetwork pods).
 
 ## References
 
