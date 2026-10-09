@@ -3,7 +3,7 @@
 # qcow2 disk image with image-builder.
 #
 # Usage: scripts/build.sh [name]    (default: fedora)
-# Image:  ghcr.io/spnngl/bootc-images/<name>:<version>, <version> being
+# Image:  ghcr.io/spnngl/images/<name>:<version>, <version> being
 #         the Containerfile's ARG BASE_VERSION default: the same name CI
 #         pushes (.github/workflows/build.yml). Not pushed.
 # Output: output/<name>/<name>.qcow2
@@ -27,7 +27,7 @@ containerfile="images/${name}/Containerfile"
 [[ -f ${containerfile} ]] || die "${containerfile} not found"
 version="$(sed -n -E 's/^ARG BASE_VERSION=([^[:space:]]+).*/\1/p' "${containerfile}")"
 [[ -n ${version} ]] || die "${containerfile} has no ARG BASE_VERSION=<version>"
-tag="ghcr.io/spnngl/bootc-images/${name}:${version}"
+tag="ghcr.io/spnngl/images/${name}:${version}"
 # An application image (no bootc lint, see AGENTS.md) has no disk image to
 # build: image-builder would only fail late, after the build.
 grep -q '^RUN bootc container lint' "${containerfile}" ||

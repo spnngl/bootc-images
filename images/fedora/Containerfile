@@ -7,8 +7,8 @@
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
 # Build commands, same tags as CI (.github/workflows/build.yml):
-#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora:44 images/
-#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/bootc-images/fedora:44-k3s images/
+#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44 images/
+#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44-k3s images/
 #
 # scripts/build.sh does the first one (default target only) and also builds a
 # qcow2 disk image; scripts/run.sh boots it in QEMU.

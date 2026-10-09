@@ -83,7 +83,7 @@ Both images end with `bootc container lint`. The host system:
   can be added to the disk image by `config.toml`.
   bootc reads it directly. `usr/lib/tmpfiles.d/container-auth.conf` links
   root's `~/.docker/config.json` to it, which podman and docker both read.
-- Image signature verification: `ghcr.io/spnngl/bootc-images/*` must be
+- Image signature verification: `ghcr.io/spnngl/images/*` must be
   signed by CI's key. See "Signing" below.
 - Firewall: `public` zone opens 80/443/42022, then drops `ssh` (22) and
   `cockpit` from it (sshd only listens on 42022, and cockpit isn't
@@ -263,7 +263,7 @@ engine that decides the bans) is not part of this repository.
 - **The base image is pinned to a major release, `ARG BASE_VERSION`
   (`44`).** `latest` would jump to the next Fedora release without
   warning. The same value is the image's own tag, so a host tracking
-  `bootc-images/fedora:44` gets every rebuild through `bootc upgrade`, and only
+  `images/fedora:44` gets every rebuild through `bootc upgrade`, and only
   moves to the next release with `bootc switch`. The Containerfile default
   is for local builds; CI passes it from its matrix.
 - **`bootc container lint` without `--fatal-warnings`.** Errors fail the
@@ -300,7 +300,7 @@ includes the former bootc-image-builder) with:
   `output/<name>/<name>.qcow2`. The default name depends on the distro and
   architecture.
 
-Images are tagged `ghcr.io/spnngl/bootc-images/<name>:<version>`,
+Images are tagged `ghcr.io/spnngl/images/<name>:<version>`,
 `<version>` being the Containerfile's `ARG BASE_VERSION` default: the
 same name CI pushes for the default target, so an installed host upgrades
 from CI's images. `build.sh` only builds the default target
@@ -312,7 +312,7 @@ Runs hadolint on each Containerfile (findings uploaded to code scanning as
 SARIF), then builds each image of its matrix (`name`, `version`,
 and for a multi-stage Containerfile `target` and tag `suffix`) for every
 platform, and pushes it to
-`ghcr.io/spnngl/bootc-images/<name>:<version><suffix>`, one manifest list
+`ghcr.io/spnngl/images/<name>:<version><suffix>`, one manifest list
 for all platforms,
 authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.
@@ -353,14 +353,14 @@ Container images only: disk images need `config.toml`.
 ## Signing
 
 CI signs every image it pushes with a cosign key pair; hosts refuse
-`ghcr.io/spnngl/bootc-images/*` images without that signature. Local
+`ghcr.io/spnngl/images/*` images without that signature. Local
 builds are not signed: `build.sh` never pushes, and a host installed from
 a local build upgrades from CI's signed images.
 
 - **Keys:** the private key is the `COSIGN_PRIVATE_KEY` repository secret,
   never in git. It has no passphrase (CI passes an empty one).
   With one, add a secret and write it to the `--sign-passphrase-file`. The public key is
-  `images/fedora/sysroot/usr/share/pki/containers/spnngl-bootc-images.pub`,
+  `images/fedora/sysroot/usr/share/pki/containers/spnngl-images.pub`,
   in `/usr` so that it updates with the image.
 - **`podman push --sign-by-sigstore-private-key`, not `cosign sign`.**
   bootc verifies through containers/image (skopeo), which reads sigstore
@@ -369,12 +369,12 @@ a local build upgrades from CI's signed images.
   containers/image can't see. podman writes the attachment format and
   takes cosign keys (`ENCRYPTED SIGSTORE PRIVATE KEY`). No Rekor
   transparency log entry is made; the policy doesn't ask for one.
-- **`etc/containers/registries.d/spnngl-bootc-images.yaml`** turns on
+- **`etc/containers/registries.d/spnngl-images.yaml`** turns on
   `use-sigstore-attachments` for our namespace: needed to read the
   signatures on hosts, and to write them in CI.
 - **`etc/containers/policy.json`, one per image** (almalinux's overrides
   fedora's): the base image's file, plus a `sigstoreSigned` requirement
-  for `ghcr.io/spnngl/bootc-images`. It replaces the file shipped by
+  for `ghcr.io/spnngl/images`. It replaces the file shipped by
   `containers-common`, since `policy.json` has no drop-in directory.
   When a base image changes its `policy.json`, port the change.
 - **`"default": reject`** is what `enforce-container-sigpolicy = true`
@@ -388,7 +388,7 @@ a local build upgrades from CI's signed images.
   attests which workflow, commit and run built each manifest list. It is
   a sigstore bundle behind OCI referrers, like cosign 3's, so hosts
   don't read it: the signature above is what they check. Check it with
-  `gh attestation verify oci://ghcr.io/spnngl/bootc-images/<name>:<tag> -R spnngl/bootc-images`.
+  `gh attestation verify oci://ghcr.io/spnngl/images/<name>:<tag> -R spnngl/images`.
   The action only reads Docker's credential file, so CI logs podman in
   with `REGISTRY_AUTH_FILE=~/.docker/config.json`.
 

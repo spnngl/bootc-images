@@ -12,8 +12,8 @@ ARG BASE_VERSION=10.2
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
 # Build commands, same tags as CI (.github/workflows/build.yml):
-#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/bootc-images/almalinux:10.2 images/
-#   podman build --format=docker --target kubeenv -f images/almalinux/Containerfile -t ghcr.io/spnngl/bootc-images/almalinux:10.2-k3s images/
+#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:10.2 images/
+#   podman build --format=docker --target kubeenv -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:10.2-k3s images/
 #
 # scripts/build.sh does the first one (default target only) and also builds a
 # qcow2 disk image; scripts/run.sh boots it in QEMU.

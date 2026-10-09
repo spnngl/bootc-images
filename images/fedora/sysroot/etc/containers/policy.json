@@ -6,10 +6,10 @@
     ],
     "transports": {
         "docker": {
-            "ghcr.io/spnngl/bootc-images": [
+            "ghcr.io/spnngl/images": [
                 {
                     "type": "sigstoreSigned",
-                    "keyPath": "/usr/share/pki/containers/spnngl-bootc-images.pub"
+                    "keyPath": "/usr/share/pki/containers/spnngl-images.pub"
                 }
             ],
             "": [{"type": "insecureAcceptAnything"}]
