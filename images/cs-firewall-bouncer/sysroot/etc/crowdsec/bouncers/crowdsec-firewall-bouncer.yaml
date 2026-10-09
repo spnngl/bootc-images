@@ -1,0 +1,52 @@
+# Default config of the cs-firewall-bouncer image. No secret in here: API_URL
+# and API_KEY are expanded from the environment at startup.
+#
+# Change settings with ONE override file mounted at
+# /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local. The bouncer
+# deep-merges it over this file: maps merge, scalars and lists are replaced.
+# Docs: https://docs.crowdsec.net/u/bouncers/firewall/
+
+# Linux netfilter through netlink: the tables below, no iptables binary.
+mode: nftables
+
+# How often the decisions (bans) are pulled from the LAPI.
+update_frequency: 10s
+
+# Container logs (the console, not a file): podman logs shows them.
+log_mode: stdout
+log_level: info
+
+# Local API (LAPI) of the security engine. Both come from the runtime.
+api_url: ${API_URL}
+api_key: ${API_KEY}
+# Wait for the LAPI at startup (boot, remote LAPI down) instead of exiting:
+# no crash loop. Errors after the first pull never exit the bouncer anyway.
+retry_initial_connect: true
+
+# Banned sources are dropped, not rejected: no answer for scanners.
+deny_action: DROP
+
+# One table per family, deleted when the bouncer stops. Separate from
+# firewalld's own table (inet firewalld).
+nftables:
+  ipv4:
+    table: crowdsec
+    chain: crowdsec-chain
+    # Before firewalld's filter chains (priority 10).
+    priority: -10
+  ipv6:
+    table: crowdsec6
+    chain: crowdsec6-chain
+    priority: -10
+
+# forward: traffic DNATed to Docker published ports and to containers.
+nftables_hooks:
+  - input
+  - forward
+
+# Host loopback (the container uses the host network): scrape locally,
+# nothing exposed.
+prometheus:
+  enabled: true
+  listen_addr: 127.0.0.1
+  listen_port: 60601

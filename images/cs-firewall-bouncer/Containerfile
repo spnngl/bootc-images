@@ -1,0 +1,46 @@
+# syntax=docker.io/docker/dockerfile:1
+
+# Releases: https://github.com/crowdsecurity/cs-firewall-bouncer/releases
+ARG BASE_VERSION=0.0.38
+FROM docker.io/library/golang:1.27 AS build
+
+ARG BASE_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+ADD --link https://github.com/crowdsecurity/cs-firewall-bouncer.git#v${BASE_VERSION} /src
+
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    <<EORUN
+make binary DOCKER_BUILD=1 \
+    BUILD_VERSION="v${BASE_VERSION}" BUILD_TAG="v${BASE_VERSION}" \
+    BUILD_TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%F_%T)"
+EORUN
+
+# Static binary, plain HTTP to the LAPI: nothing else to ship.
+FROM scratch
+ARG BASE_VERSION
+
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="MIT"
+# Binary in /usr/bin, config in /etc/crowdsec/bouncers/: the upstream RPM's paths,
+# so upstream docs, including the .yaml.local override, apply as is.
+COPY --link --from=build /src/crowdsec-firewall-bouncer /usr/bin/
+COPY --link ./cs-firewall-bouncer/sysroot/ /
+
+# Prometheus metrics (prometheus.listen_port in the config). Documentation
+# only: the container uses the host network and listens on 127.0.0.1.
+EXPOSE 60601/tcp
+
+ENTRYPOINT ["/usr/bin/crowdsec-firewall-bouncer"]
+CMD ["-c", "/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml"]
+
+# Smoke test: the binary runs on this platform and the shipped config parses.
+# Exec form: scratch has no shell. -T only reads and prints the config. Not -t:
+# it still creates the nftables tables and deletes them on exit, which would
+# also delete the running bouncer's (so no HEALTHCHECK on it either).
+RUN ["/usr/bin/crowdsec-firewall-bouncer", "-c", "/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml", "-T"]
