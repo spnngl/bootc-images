@@ -27,7 +27,7 @@ For a bootc image there are two stages:
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
 │   ├── k3s/                    # shared by every kubeenv stage (not an image)
 │   │   ├── install.sh          # k3s and CRI-O install
-│   │   └── sysroot/...         # CRI-O configuration, kube.slice
+│   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
 │   └── <name>/                 # one folder per image (bootc, or application
 │       │                       # image: cs-firewall-bouncer)
 │       ├── Containerfile
@@ -65,7 +65,9 @@ Docker or k3s. Stages:
   on the same tag, so moving to another release is a `bootc switch`.
   The container runtime is CRI-O (same minor release, with crun),
   configured by `images/k3s/sysroot/`, copied after the script, which
-  also puts k3s and CRI-O in `kube.slice`, out of `system.slice`. Cilium
+  also puts k3s and CRI-O in `kube.slice`, out of `system.slice`, and
+  sets up swap on zram, which pods use through the kubelet's
+  `LimitedSwap` (K3S.md, "Swap"). Cilium
   is the CNI. Setup and firewall: [K3S.md](K3S.md); the reasons are in
   the script, next to each step.
 

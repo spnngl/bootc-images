@@ -1,0 +1,4 @@
+# Pressure stall information (/proc/pressure, cgroups' *.pressure files),
+# built disabled in AlmaLinux kernels. node-exporter's pressure collector
+# and the kubelet's PSI metrics read it.
+kargs = ["psi=1"]

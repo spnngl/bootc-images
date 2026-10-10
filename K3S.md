@@ -36,6 +36,31 @@ own signature policy, `/etc/crio/policy.json` (accepts anything), not
 `/etc/containers/policy.json`. Its default capabilities have no
 `NET_RAW`: `ping` fails in pods that don't add it.
 
+## Swap
+
+Hosts swap on zram only, compressed with zstd, the size of RAM (at most
+8 GiB): `images/k3s/sysroot/usr/lib/systemd/zram-generator.conf.d/50-k3s.conf`.
+Disk swap and zswap stay off (`images/k3s/sysroot/usr/lib/bootc/kargs.d/10-swapoff.toml`).
+Reclaim favours zram over dropping file pages (`vm.swappiness = 180`,
+no swap readahead: `images/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
+
+- k3s, CRI-O and the other host daemons swap without limit.
+- Pods: the kubelet's `LimitedSwap`
+  (`images/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`).
+  Only non-critical Burstable containers with a memory request below
+  their limit (or no limit) swap, each up to its memory request × swap /
+  RAM.
+- zram's compressed pages are host memory, charged to no cgroup: a pod's
+  swap counts against its swap limit, not its memory limit.
+- That file is in `/var`, which bootc only unpacks at install: on an
+  existing host, copy it by hand, then restart k3s (or k3s-agent). The
+  kubelet reads the swap size at startup: restart it after zram is up.
+
+The kernel tracks pressure stall information (`psi=1`,
+`images/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux
+kernels build disabled: node-exporter's `node_pressure_*` metrics and the
+kubelet's PSI metrics need it.
+
 ## Control-plane
 
 ```sh

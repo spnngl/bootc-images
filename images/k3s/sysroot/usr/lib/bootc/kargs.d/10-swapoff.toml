@@ -1,1 +1,7 @@
-kargs = ["systemd.swap=0", "noresume"]
+# No disk swap: systemd ignores swap from fstab and GPT auto-discovery.
+# zram swap (usr/lib/systemd/zram-generator.conf.d/50-k3s.conf) comes from
+# its own generator and stays on. No zswap either: it is a compressed cache
+# in front of a swap device, and in front of zram it would compress pages
+# twice. The kernels already default it off (CONFIG_ZSWAP_DEFAULT_ON unset):
+# this keeps it off.
+kargs = ["systemd.swap=0", "noresume", "zswap.enabled=0"]
